@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}短剧数据 - 剧集列表{% endblock %}
+{% block content %}
+<h1>剧集列表</h1>
+
+<form class="filters" method="get">
+    <select name="genre_type">
+        <option value="">全部类型</option>
+        <option value="漫剧" {% if current_genre_type == "漫剧" %}selected{% endif %}>漫剧</option>
+        <option value="AI短剧" {% if current_genre_type == "AI短剧" %}selected{% endif %}>AI短剧</option>
+    </select>
+    <select name="category">
+        <option value="">全部分类</option>
+        <option value="奇幻" {% if current_category == "奇幻" %}selected{% endif %}>奇幻</option>
+        <option value="玄幻" {% if current_category == "玄幻" %}selected{% endif %}>玄幻</option>
+        <option value="豪门" {% if current_category == "豪门" %}selected{% endif %}>豪门</option>
+    </select>
+    <select name="sort">
+        <option value="rank_order" {% if current_sort == "rank_order" %}selected{% endif %}>爬取顺序</option>
+        <option value="play_cnt" {% if current_sort == "play_cnt" %}selected{% endif %}>播放数</option>
+        <option value="hot_content_value" {% if current_sort == "hot_content_value" %}selected{% endif %}>热度</option>
+        <option value="hot_score" {% if current_sort == "hot_score" %}selected{% endif %}>Hot Score</option>
+    </select>
+    <select name="order">
+        <option value="asc" {% if current_order == "asc" %}selected{% endif %}>升序</option>
+        <option value="desc" {% if current_order == "desc" %}selected{% endif %}>降序</option>
+    </select>
+    <button type="submit">筛选/排序</button>
+    <a href="/" class="btn-reset">重置</a>
+</form>
+
+<p class="stats">共 {{ series_list|length }} 部剧集</p>
+
+<table>
+    <thead>
+        <tr>
+            <th>排名</th>
+            <th>标题</th>
+            <th>类型</th>
+            <th>分类</th>
+            <th>播放数</th>
+            <th>热度</th>
+            <th>Hot Score</th>
+            <th>时长</th>
+            <th>集数</th>
+            <th>作者/版权</th>
+            <th>视频进度</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for s in series_list %}
+        <tr>
+            <td>{{ s.rank_order or '-' }}</td>
+            <td><a href="/series/{{ s.series_id }}">{{ s.title }}</a></td>
+            <td>{{ s.genre_type }}</td>
+            <td>{{ s.category }}</td>
+            <td>{{ s.play_cnt or '-' }}</td>
+            <td>{{ s.hot_content or '-' }}</td>
+            <td>{{ s.hot_score or '-' }}</td>
+            <td>{{ s.duration or '-' }}</td>
+            <td>{{ s.total_episodes or s.episode_cnt or '-' }}</td>
+            <td>{{ s.copyright or s.author or '-' }}</td>
+            <td>
+                {% if episode_counts.get(s.series_id) %}
+                    {{ episode_counts[s.series_id].uploaded }}/{{ episode_counts[s.series_id].total }}
+                {% else %}
+                    0/0
+                {% endif %}
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
