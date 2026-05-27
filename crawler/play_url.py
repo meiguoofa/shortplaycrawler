@@ -5,13 +5,43 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
-from config import CRAWL_CODE, PLAY_URL, PLAY_URL_SLEEP, VIDEO_QUALITY, DOWNLOAD_CONCURRENCY, VEFAAS_URL
+import tos
+
+from config import CRAWL_CODE, PLAY_URL, PLAY_URL_SLEEP, VIDEO_QUALITY, DOWNLOAD_CONCURRENCY, VEFAAS_URL, TOS_CONFIG
 from crawler.client import build_url, fetch_with_retry
 from models import DramaSeries, DramaEpisode, get_session
 from storage.s3 import S3StorageClient
 
 
-# ── veFaaS mode ──
+def _get_tos_client():
+    return tos.TosClientV2(
+        ak=TOS_CONFIG["access_key_id"],
+        sk=TOS_CONFIG["secret_access_key"],
+        endpoint="tos-cn-shanghai.volces.com",
+        region=TOS_CONFIG["region"],
+        request_timeout=120,
+    )
+
+
+# ── Mode 1: TOS fetch_object (server-side fetch, no bandwidth used) ──
+
+def _tos_fetch(video_url, object_key):
+    """TOS server-side fetch: TOS downloads the URL internally. Returns (object_url, file_size)."""
+    client = _get_tos_client()
+    result = client.fetch_object(
+        bucket=TOS_CONFIG["bucket"],
+        key=object_key,
+        url=video_url,
+        ignore_same_key=True,
+    )
+    # Get file size via head_object
+    head = client.head_object(TOS_CONFIG["bucket"], object_key)
+    file_size = head.content_length if hasattr(head, "content_length") else None
+    object_url = f"{TOS_CONFIG['public_base_url']}/{object_key}"
+    return object_url, file_size
+
+
+# ── Mode 2: veFaaS cloud function ──
 
 def _call_vefaas(tasks):
     """Call veFaaS function to transfer videos internally."""
@@ -27,7 +57,7 @@ def _call_vefaas(tasks):
     return data.get("results", [])
 
 
-# ── Local streaming mode ──
+# ── Mode 3: Local streaming fallback ──
 
 class _PipeStream:
     """Pipe: writer thread downloads chunks, boto3 reader uploads them."""
@@ -93,19 +123,23 @@ def _local_stream_upload(video_url, object_key):
 
     t = threading.Thread(target=writer, daemon=True)
     t.start()
-
     result = storage.upload_fileobj(pipe, object_key)
     t.join(timeout=600)
-
     return result.object_url, total_size[0]
 
 
 # ── Unified episode processor ──
 
+def _get_mode():
+    if VEFAAS_URL:
+        return "veFaaS"
+    return "tos_fetch"
+
+
 def process_episode(episode, series, quality=VIDEO_QUALITY):
-    """Fetch play URL, transfer video to TOS (veFaaS or local streaming)."""
+    """Fetch play URL, transfer video to TOS (TOS server-side fetch preferred)."""
     db = get_session()
-    use_vefaas = bool(VEFAAS_URL)
+    mode = _get_mode()
 
     try:
         ep = db.query(DramaEpisode).filter_by(video_id=episode.video_id).first()
@@ -135,7 +169,9 @@ def process_episode(episode, series, quality=VIDEO_QUALITY):
 
         object_key = f"{series.genre_type}/{series.category}/{series.series_id}/{ep.episode_no:03d}_{ep.video_id}.mp4"
 
-        if use_vefaas:
+        if mode == "tos_fetch":
+            object_url, file_size = _tos_fetch(video_url, object_key)
+        elif mode == "veFaaS":
             results = _call_vefaas([{"video_url": video_url, "object_key": object_key}])
             result = results[0] if results else {}
             if result.get("error"):
@@ -156,7 +192,6 @@ def process_episode(episode, series, quality=VIDEO_QUALITY):
         db.commit()
 
         size_mb = (file_size or 0) / 1024 / 1024
-        mode = "veFaaS" if use_vefaas else "local"
         print(f"    Uploaded [{mode}]: {ep.episode_title} ({size_mb:.1f}MB) -> {object_url}")
         return True
 
@@ -181,7 +216,7 @@ def download_and_upload_all():
     try:
         series_list = db.query(DramaSeries).order_by(DramaSeries.id).all()
         total_series = len(series_list)
-        mode = "veFaaS internal" if VEFAAS_URL else "local streaming"
+        mode = _get_mode()
         print(f"\n=== Download & Upload ({mode}): {total_series} series ===")
 
         for s_idx, series in enumerate(series_list, 1):
