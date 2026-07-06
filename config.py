@@ -11,11 +11,11 @@ if os.path.exists(_env_path):
                 os.environ.setdefault(k.strip(), v.strip())
 
 # API
-CRAWL_CODE = "FXKBAGV5OJQH"
-RANKING_BASE_URL = "http://43.142.49.190:1789/tool/duanju/hg/%E6%8E%92%E8%A1%8C%E6%A6%9C/%E7%AD%9B%E9%80%89%E8%BF%9B%E5%85%A5.php"
-DETAIL_URL = "http://160.202.253.154:1231/api/hg/wai_api_detail.php"
-EPISODES_URL = "http://160.202.253.154:1231/api/hg/wai_api_book.php"
-PLAY_URL = "http://43.142.49.190:1789/api/g/gui_play.php"
+CRAWL_CODE = "Q4T1C3R0EX0E"
+RANKING_BASE_URL = "http://36.138.76.25:4455/tool/duanju/hg/%E6%8E%92%E8%A1%8C%E6%A6%9C/%E7%AD%9B%E9%80%89%E8%BF%9B%E5%85%A5.php"
+DETAIL_URL = "http://36.138.76.25:4455/api/api.php?platform=wpf11&action=detail_hg"
+EPISODES_URL = "http://36.138.76.25:4455/api/api.php?platform=wpf11&action=book_hg"
+PLAY_URL = "http://36.138.76.25:4455/api/api.php?platform=wpf11&action=play_hg"
 
 # 6 ranking lists
 RANKING_LISTS = [
@@ -56,3 +56,60 @@ DOWNLOAD_CONCURRENCY = 10
 # veFaaS cloud function URL for internal TOS transfer
 # Deploy vefaas/tos_transfer.py to veFaaS, then paste the trigger URL here
 VEFAAS_URL = ""
+
+# ── Daily new drama + translation + poster regeneration ──
+DAILY_NEW_URL = "http://36.138.76.25:4455/api/api.php?platform=wpf11&action=shangxinrili_hg"
+DAILY_NEW_CRON_HOUR = 9  # Beijing time
+DAILY_NEW_TIMEZONE = "Asia/Shanghai"
+
+# Search (aggregated across 5 platforms)
+SEARCH_API_BASE = "http://36.138.76.25:4455/api/api.php"
+SEARCH_ACTIONS = [
+    "search_hg",
+    "search_dm_hg",
+    "search_hm",
+    "search_hl",
+    "search_dl",
+]
+
+# Doubao (translation + image gen) via Volcengine ARK (OpenAI-compatible)
+DOUBAO_API_KEY = os.environ.get("DOUBAO_API_KEY", "")
+DOUBAO_BASE_URL = os.environ.get("DOUBAO_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
+DOUBAO_TRANSLATE_MODEL = os.environ.get("DOUBAO_TRANSLATE_MODEL", "doubao-seed-2-0-pro-260215")
+DOUBAO_IMAGE_MODELS = [
+    "doubao-seedream-5-0-260128",
+    "doubao-seedream-4-5-251128",
+    "doubao-seedream-4-0-250828",
+]
+DOUBAO_DEFAULT_IMAGE_MODEL = "doubao-seedream-4-0-250828"
+DOUBAO_IMAGE_SIZE = "2048x2048"  # min 3686400 px for 5-0/4-5
+
+# Translation target languages (ISO code → display name shown to LLM)
+TRANSLATE_LANGS = {
+    "en":    "English",
+    "zh":    "中文",
+    "pt":    "Português",
+    "pt-BR": "Português (Brasil)",
+    "id":    "Bahasa Indonesia",
+}
+
+# Image generation default prompt (user-editable on web; {target_lang} and {synopsis} are substituted at run time)
+DEFAULT_IMAGE_GEN_PROMPT = (
+    "以这张封面作为参考图片，保留原图中人物面部特征不变，"
+    "将图中的文字替换为{target_lang}，"
+    "结合目标语言国家（{target_lang}）的文化特点和剧情简介({synopsis})，"
+    "更换服装和场景，生成新的海报图片。"
+)
+
+# Translation prompts (user-editable on web; {target_lang}/{title}/{description} substituted at run time)
+DEFAULT_TRANSLATE_SYSTEM_PROMPT = (
+    "你是专业的本地化翻译。请把用户给的中文剧名和简介翻译成{target_lang}。"
+    "严格按格式输出两行：\nTITLE=<译文剧名>\nDESC=<译文简介>\n不要输出任何其他内容。"
+)
+DEFAULT_TRANSLATE_USER_PROMPT = "剧名：{title}\n简介：{description}"
+
+# TOS object key prefix for generated posters
+TOS_IMAGE_OBJECT_PREFIX = "posters"
+
+# Export dir for CSV/Excel
+EXPORT_DIR = os.path.join(BASE_DIR, "data", "exports")

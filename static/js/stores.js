@@ -39,7 +39,12 @@
                 try {
                     const r = await fetch('/api/config/defaults');
                     const data = await r.json();
-                    Object.assign(this, data);
+                    this.langs = data.langs || {};
+                    this.imageModels = data.image_models || [];
+                    this.defaultImageModel = data.default_image_model || '';
+                    this.defaultImagePrompt = data.default_image_prompt || '';
+                    this.defaultTranslateSystemPrompt = data.default_translate_system_prompt || '';
+                    this.defaultTranslateUserPrompt = data.default_translate_user_prompt || '';
                     this.loaded = true;
                 } catch (e) {
                     console.error('Failed to load config:', e);
@@ -96,6 +101,15 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
         });
+        if (!r.ok) {
+            const err = await r.json().catch(() => ({ error: r.statusText }));
+            throw new Error(err.error || `HTTP ${r.status}`);
+        }
+        return r.json();
+    }
+
+    async function apiDelete(url) {
+        const r = await fetch(url, { method: 'DELETE' });
         if (!r.ok) {
             const err = await r.json().catch(() => ({ error: r.statusText }));
             throw new Error(err.error || `HTTP ${r.status}`);
@@ -165,6 +179,8 @@
             const menuOptions = computed(() => [
                 { label: '剧集列表', key: 'series', path: '/' },
                 { label: '每日上新', key: 'daily-new', path: '/daily-new' },
+                { label: '搜索', key: 'search', path: '/search' },
+                { label: '待处理清单', key: 'pending-cart', path: '/pending-cart' },
                 { label: '批次列表', key: 'batches', path: '/daily-new/batches' },
                 { label: '翻译任务', key: 'jobs', path: '/daily-new/jobs' },
             ]);
@@ -172,6 +188,8 @@
             const activeKey = computed(() => {
                 if (route.path === '/') return 'series';
                 if (route.path === '/daily-new') return 'daily-new';
+                if (route.path === '/search') return 'search';
+                if (route.path === '/pending-cart') return 'pending-cart';
                 if (route.path === '/daily-new/batches') return 'batches';
                 if (route.path === '/daily-new/jobs') return 'jobs';
                 return '';
@@ -233,7 +251,7 @@
         Vue, VueRouter, Pinia, VueUse, naive,
         defineComponent, ref, reactive, computed, onMounted, watch, h,
         useConfigStore, useThemeStore,
-        apiGet, apiPost, genBatchId, substitute, truncate,
+        apiGet, apiPost, apiDelete, genBatchId, substitute, truncate,
         formatDateTime, statusBadgeType, statusLabel, AppLayout,
         usePoll, useNotify,
     };

@@ -47,6 +47,8 @@
         { path: '/', name: 'series-list', component: window.SeriesList },
         { path: '/series/:series_id', name: 'series-detail', component: window.SeriesDetail },
         { path: '/daily-new', name: 'daily-new', component: window.DailyNew },
+        { path: '/search', name: 'search', component: window.Search },
+        { path: '/pending-cart', name: 'pending-cart', component: window.PendingCart },
         { path: '/daily-new/batches', name: 'batch-list', component: window.BatchList },
         { path: '/daily-new/batches/:batch_id', name: 'batch-detail', component: window.BatchDetail },
         { path: '/daily-new/jobs', name: 'job-list', component: window.JobList },

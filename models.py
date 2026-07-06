@@ -4,8 +4,10 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     Column,
+    Date,
     DateTime,
     Float,
+    ForeignKey,
     Integer,
     String,
     Text,
@@ -102,7 +104,136 @@ class DramaEpisode(Base):
     )
 
 
-engine = create_engine(DATABASE_URL, echo=False)
+class DailyNewDrama(Base):
+    """一部当日上新的剧（来自 shangxinrili_hg 接口）。"""
+
+    __tablename__ = "daily_new_dramas"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    series_id = Column(String(64), nullable=False, index=True)
+    fetch_date = Column(Date, nullable=False, index=True)
+
+    # From shangxinrili_hg response
+    title = Column(String(255), nullable=False)
+    cover_url = Column(Text, nullable=True)
+    episode_cnt = Column(Integer, nullable=True)
+    category = Column(String(64), nullable=True)  # from sub_title_list[0].content
+
+    # Filled by detail_hg follow-up
+    author = Column(String(255), nullable=True)
+    description = Column(Text, nullable=True)
+
+    # Original raw JSON for debugging
+    raw_payload = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("series_id", "fetch_date", name="uq_daily_series_date"),
+    )
+
+
+class EpisodeAsset(Base):
+    """某部 daily-new-drama 的某一集视频在 TOS 中的位置。"""
+
+    __tablename__ = "episode_assets"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    daily_new_drama_id = Column(Integer, ForeignKey("daily_new_dramas.id"), nullable=False, index=True)
+    video_id = Column(String(64), nullable=False, index=True)
+    episode_no = Column(Integer, nullable=True)
+    episode_title = Column(String(128), nullable=True)
+
+    object_key = Column(Text, nullable=True)
+    object_url = Column(Text, nullable=True)
+    file_size = Column(BigInteger, nullable=True)
+
+    status = Column(String(32), default="pending")  # pending/uploaded/failed
+    error_message = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+class TranslationJob(Base):
+    """对一部 daily-new-drama 做某语言的翻译+海报重绘任务。"""
+
+    __tablename__ = "translation_jobs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    daily_new_drama_id = Column(Integer, ForeignKey("daily_new_dramas.id"), nullable=False, index=True)
+    target_lang = Column(String(16), nullable=False, index=True)  # en/zh/pt/pt-BR/id
+
+    image_model = Column(String(64), nullable=True)
+    image_prompt = Column(Text, nullable=True)  # backward-compat: same as image_prompt_final
+    image_prompt_template = Column(Text, nullable=True)  # editable template (with {target_lang}/{synopsis})
+
+    # Translation prompts (editable templates + final substituted values)
+    translate_system_prompt = Column(Text, nullable=True)  # template
+    translate_user_prompt = Column(Text, nullable=True)  # template
+    translate_system_prompt_final = Column(Text, nullable=True)  # final substituted
+    translate_user_prompt_final = Column(Text, nullable=True)  # final substituted
+
+    status = Column(String(32), default="pending")  # pending/translating/poster_generating/processing_episodes/done/failed
+    translated_title = Column(String(255), nullable=True)
+    translated_desc = Column(Text, nullable=True)
+
+    poster_object_key = Column(Text, nullable=True)
+    poster_object_url = Column(Text, nullable=True)
+
+    error_message = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    batch_id = Column(String(36), nullable=True, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("daily_new_drama_id", "target_lang", name="uq_drama_lang"),
+    )
+
+
+class CartItem(Base):
+    """用户从搜索结果加入待处理清单的剧（购物车项）。"""
+
+    __tablename__ = "cart_items"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    series_id = Column(String(64), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    cover_url = Column(Text, nullable=True)
+    episode_cnt = Column(Integer, nullable=True)
+    category = Column(String(255), nullable=True)
+    author = Column(String(255), nullable=True)
+    description = Column(Text, nullable=True)
+    raw_payload = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("series_id", name="uq_cart_series"),
+    )
+
+
+from sqlalchemy import event as _sa_event
+
+engine = create_engine(
+    DATABASE_URL,
+    echo=False,
+    connect_args={"check_same_thread": False, "timeout": 30},
+    pool_pre_ping=True,
+)
+
+
+@_sa_event.listens_for(engine, "connect")
+def _set_sqlite_pragma(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.close()
+
+
 SessionLocal = sessionmaker(bind=engine)
 
 
