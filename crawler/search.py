@@ -21,16 +21,20 @@ def fetch_search_one(keyword: str, action: str) -> list[dict]:
 
 
 def fetch_search_all(keyword: str) -> list[dict]:
-    """Aggregate search across 5 platforms, dedup by book_id."""
+    """Aggregate search across 5 platforms for one or more ';'-separated keywords."""
+    keywords = [k.strip() for k in keyword.split(";") if k.strip()]
+    if not keywords:
+        return []
     seen: dict[str, dict] = {}
+    tasks = [(k, action) for k in keywords for action in SEARCH_ACTIONS]
     with ThreadPoolExecutor(max_workers=5) as ex:
-        futures = {ex.submit(fetch_search_one, keyword, action): action for action in SEARCH_ACTIONS}
+        futures = {ex.submit(fetch_search_one, k, a): (k, a) for k, a in tasks}
         for f in as_completed(futures):
-            action = futures[f]
+            k, a = futures[f]
             try:
                 items = f.result()
             except Exception as e:
-                print(f"  [{action}] failed: {e}")
+                print(f"  [{k}/{a}] failed: {e}")
                 items = []
             for item in items:
                 sid = str(item.get("book_id") or "")

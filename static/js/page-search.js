@@ -102,14 +102,14 @@
             <page-shell title="搜索剧集">
                 <template #actions>
                     <div class="flex flex-wrap items-center gap-3">
-                        <n-input v-model:value="keyword" placeholder="输入剧名关键词"
-                                 style="width: 240px;" @keyup.enter="search" />
+                        <n-input v-model:value="keyword" placeholder="输入剧名，多个用 ; 分隔"
+                                 style="width: 360px;" @keyup.enter="search" />
                         <n-button type="primary" :loading="loading" @click="search">搜索</n-button>
                     </div>
                 </template>
 
                 <div v-if="submittedKeyword" class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                    关键词「<strong>{{ submittedKeyword }}</strong>」共搜到 {{ items.length }} 部剧（来自 5 个平台聚合，已按 series_id 去重）
+                    关键词「<strong>{{ submittedKeyword }}</strong>」共搜到 {{ items.length }} 部剧（多个剧名用 ; 分隔，5 平台聚合，按 series_id 去重）
                 </div>
 
                 <loading-skeleton v-if="loading" type="list" :rows="6" />
