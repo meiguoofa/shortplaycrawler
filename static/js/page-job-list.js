@@ -15,17 +15,18 @@
             const jobs = ref([]);
             const statusFilter = ref('all');
 
-            async function load() {
-                loading.value = true;
+            async function load(opts = {}) {
+                const silent = opts.silent;
+                if (!silent) loading.value = true;
                 error.value = '';
                 try {
                     const data = await apiGet('/api/daily-new/jobs');
                     jobs.value = data.jobs || [];
                 } catch (e) {
-                    error.value = e.message;
+                    if (!silent) error.value = e.message;
                     notify.error('加载失败: ' + e.message);
                 } finally {
-                    loading.value = false;
+                    if (!silent) loading.value = false;
                 }
             }
             onMounted(load);
@@ -44,7 +45,7 @@
             }));
 
             const hasPending = computed(() => stats.value.pending > 0);
-            usePoll(() => { if (hasPending.value) load(); }, 10000);
+            usePoll(() => { if (hasPending.value) load({ silent: true }); }, 10000);
 
             const columns = computed(() => [
                 { title: 'ID', key: 'id', width: 70, align: 'center' },

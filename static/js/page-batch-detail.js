@@ -18,8 +18,9 @@
             const batch = ref(null);
             const activeNames = ref([]);
 
-            async function load() {
-                loading.value = true;
+            async function load(opts = {}) {
+                const silent = opts.silent;
+                if (!silent) loading.value = true;
                 error.value = '';
                 try {
                     const data = await apiGet('/api/daily-new/batches/' + route.params.batch_id);
@@ -28,10 +29,10 @@
                         activeNames.value = data.jobs.slice(0, 3).map(j => String(j.id));
                     }
                 } catch (e) {
-                    error.value = e.message;
+                    if (!silent) error.value = e.message;
                     notify.error('加载失败: ' + e.message);
                 } finally {
-                    loading.value = false;
+                    if (!silent) loading.value = false;
                 }
             }
             onMounted(load);
@@ -40,7 +41,7 @@
                 batch.value && batch.value.jobs &&
                 batch.value.jobs.some(j => !['done', 'failed'].includes(j.status))
             );
-            usePoll(() => { if (hasPending.value) load(); }, 10000);
+            usePoll(() => { if (hasPending.value) load({ silent: true }); }, 10000);
 
             const breadcrumbs = computed(() => [
                 { label: '批次列表', path: '/daily-new/batches' },

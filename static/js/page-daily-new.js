@@ -35,8 +35,9 @@
             const backfillForm = reactive({ start_date: '2026-06-15', end_date: '' });
             const backfilling = ref(false);
 
-            async function load() {
-                loading.value = true;
+            async function load(opts = {}) {
+                const silent = opts.silent;
+                if (!silent) loading.value = true;
                 error.value = '';
                 try {
                     const data = await apiGet('/api/daily-new?date=' + targetDate.value);
@@ -47,10 +48,10 @@
                     nextDate.value = data.next_date;
                     if (!backfillForm.end_date) backfillForm.end_date = data.target_date;
                 } catch (e) {
-                    error.value = e.message;
+                    if (!silent) error.value = e.message;
                     notify.error('加载失败: ' + e.message);
                 } finally {
-                    loading.value = false;
+                    if (!silent) loading.value = false;
                 }
             }
 
@@ -187,7 +188,7 @@
                 Object.values(jobMap.value).some(jobs => jobs.some(j => !['done', 'failed'].includes(j.status)))
             );
             const { pause, resume } = usePoll(() => {
-                if (hasPending.value) load();
+                if (hasPending.value) load({ silent: true });
             }, 10000);
             onMounted(() => resume());
 

@@ -16,17 +16,18 @@
             const error = ref('');
             const batches = ref([]);
 
-            async function load() {
-                loading.value = true;
+            async function load(opts = {}) {
+                const silent = opts.silent;
+                if (!silent) loading.value = true;
                 error.value = '';
                 try {
                     const data = await apiGet('/api/daily-new/batches');
                     batches.value = data.batches || [];
                 } catch (e) {
-                    error.value = e.message;
+                    if (!silent) error.value = e.message;
                     notify.error('加载失败: ' + e.message);
                 } finally {
-                    loading.value = false;
+                    if (!silent) loading.value = false;
                 }
             }
             onMounted(load);
@@ -35,7 +36,7 @@
             const hasPending = computed(() =>
                 batches.value.some(b => b.pending_count > 0)
             );
-            usePoll(() => { if (hasPending.value) load(); }, 10000);
+            usePoll(() => { if (hasPending.value) load({ silent: true }); }, 10000);
 
             // 统计
             const stats = computed(() => {
