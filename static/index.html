@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>短剧数据管理</title>
+    <link rel="stylesheet" href="/static/vendor/tailwind.css">
+    <style>
+        /* FOUC 防御：在 Vue 挂载前隐藏 #app */
+        [x-cloak] { display: none !important; }
+        #app:empty { min-height: 100vh; background: #f8fafc; }
+        html.dark #app:empty { background: #0f172a; }
+        #app-loader {
+            position: fixed; inset: 0;
+            display: flex; align-items: center; justify-content: center;
+            background: #f8fafc; color: #64748b;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-size: 14px;
+        }
+        html.dark #app-loader {
+            background: #0f172a; color: #94a3b8;
+        }
+        #app-loader::after {
+            content: '加载中...';
+        }
+        #app-loader.hidden { display: none; }
+    </style>
+    <!-- Vendor JS (自托管，避免 CDN 不可用时白屏) -->
+    <script src="/static/vendor/vue.global.prod.js"></script>
+    <script src="/static/vendor/vue-demi.iife.min.js"></script>
+    <script src="/static/vendor/pinia.iife.prod.js"></script>
+    <script src="/static/vendor/vue-router.global.prod.js"></script>
+    <script src="/static/vendor/vueuse.iife.min.js"></script>
+    <script src="/static/vendor/naive-ui.prod.js"></script>
+    <!-- App code -->
+    <script src="/static/js/stores.js" defer></script>
+    <script src="/static/js/ui-components.js" defer></script>
+    <script src="/static/js/page-series-list.js" defer></script>
+    <script src="/static/js/page-series-detail.js" defer></script>
+    <script src="/static/js/page-daily-new.js" defer></script>
+    <script src="/static/js/page-batch-list.js" defer></script>
+    <script src="/static/js/page-batch-detail.js" defer></script>
+    <script src="/static/js/page-job-list.js" defer></script>
+    <script src="/static/js/app.js" defer></script>
+</head>
+<body>
+    <div id="app">
+        <div id="app-loader"></div>
+    </div>
+</body>
+</html>

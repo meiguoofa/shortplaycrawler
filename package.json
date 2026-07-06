@@ -1,0 +1,24 @@
+{
+  "name": "short-drama-crawl",
+  "version": "1.0.0",
+  "description": "",
+  "main": "tailwind.config.js",
+  "scripts": {
+    "build:css": "tailwindcss -i ./static/css/input.css -o ./static/vendor/tailwind.css --minify",
+    "watch:css": "tailwindcss -i ./static/css/input.css -o ./static/vendor/tailwind.css --watch"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/meiguoofa/shortplaycrawler.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/meiguoofa/shortplaycrawler/issues"
+  },
+  "homepage": "https://github.com/meiguoofa/shortplaycrawler#readme",
+  "devDependencies": {
+    "tailwindcss": "^3.4.19"
+  }
+}
