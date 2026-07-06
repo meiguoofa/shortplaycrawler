@@ -51,9 +51,7 @@
                     const selected = items.value.filter(it => selectedSeriesIds.value.includes(it.series_id));
                     const data = await apiPost('/api/pending-cart', { items: selected });
                     notify.success(`已加入清单 ${data.added} 部（重复 ${selected.length - data.added} 部已跳过）`);
-                    if (data.added > 0) {
-                        setTimeout(() => router.push('/pending-cart'), 800);
-                    }
+                    selectedSeriesIds.value = [];
                 } catch (e) {
                     notify.error('加入失败: ' + e.message);
                 } finally {
