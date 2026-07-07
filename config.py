@@ -52,6 +52,10 @@ TOS_CONFIG = {
 
 # Download/Upload concurrency per series
 DOWNLOAD_CONCURRENCY = 10
+# Per-drama episode upload concurrency in pipeline (5 = 5 episodes in parallel)
+EPISODE_UPLOAD_CONCURRENCY = 5
+# Per-batch drama concurrency — how many dramas run pipeline in parallel
+DRAMA_PIPELINE_CONCURRENCY = 10
 
 # veFaaS cloud function URL for internal TOS transfer
 # Deploy vefaas/tos_transfer.py to veFaaS, then paste the trigger URL here

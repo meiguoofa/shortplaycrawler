@@ -1,4 +1,5 @@
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
 from config import (
@@ -9,6 +10,7 @@ from config import (
     DEFAULT_TRANSLATE_USER_PROMPT,
     DOUBAO_DEFAULT_IMAGE_MODEL,
     EPISODES_URL,
+    EPISODE_UPLOAD_CONCURRENCY,
     MOBINOVA_DEFAULT_TRANSLATE_MODEL,
     PLAY_URL,
     PLAY_URL_SLEEP,
@@ -48,6 +50,57 @@ def _fetch_cover_bytes(cover_url: str) -> bytes | None:
     except Exception as e:
         print(f"  WARN: failed to fetch cover bytes: {e}")
         return None
+
+
+def _process_episode_asset(drama_id: int, series_id: str, video_id: str,
+                           episode_no: int, episode_title: str) -> tuple[int, str, int | None]:
+    """Process one episode in its own db session (thread-safe).
+
+    Returns (episode_no, status, file_size). Caller handles logging.
+    """
+    db = get_session()
+    try:
+        existing = db.query(EpisodeAsset).filter_by(
+            daily_new_drama_id=drama_id, video_id=video_id
+        ).first()
+        if existing and existing.status == "uploaded":
+            return episode_no, "skipped", existing.file_size
+
+        ea = existing or EpisodeAsset(
+            daily_new_drama_id=drama_id,
+            video_id=video_id,
+            episode_no=episode_no,
+            episode_title=episode_title,
+            status="pending",
+        )
+        if not existing:
+            db.add(ea)
+        db.commit()
+
+        try:
+            video_url = _fetch_video_url(video_id)
+            if not video_url:
+                ea.status = "failed"
+                ea.error_message = "No video_url in play_hg response"
+                db.commit()
+                return episode_no, "failed", None
+
+            object_key = f"{TOS_IMAGE_OBJECT_PREFIX}/videos/{series_id}/{episode_no:03d}_{video_id}.mp4"
+            object_url, file_size = _tos_fetch(video_url, object_key)
+            ea.object_key = object_key
+            ea.object_url = object_url
+            ea.file_size = file_size
+            ea.status = "uploaded"
+            ea.error_message = None
+            db.commit()
+            return episode_no, "uploaded", file_size
+        except Exception as e:
+            ea.status = "failed"
+            ea.error_message = str(e)[:500]
+            db.commit()
+            return episode_no, "failed", None
+    finally:
+        db.close()
 
 
 def run_pipeline(
@@ -201,59 +254,42 @@ def run_pipeline(
         else:
             try:
                 episodes_raw = _fetch_episodes_for_series(drama.series_id)
-                print(f"  Episodes to upload: {len(episodes_raw)}")
+                total_eps = len(episodes_raw)
+                print(f"  Episodes to upload: {total_eps} (concurrency={EPISODE_UPLOAD_CONCURRENCY})")
 
                 # Mark this stage so frontend can see "processing episodes"
                 job.status = "processing_episodes"
                 db.commit()
 
+                # Build task list (skip empty video_id)
+                tasks = []
                 for idx, ep in enumerate(episodes_raw, 1):
-                    video_id = str(ep.get("video_id") or "")
-                    if not video_id:
+                    vid = str(ep.get("video_id") or "")
+                    if not vid:
                         continue
+                    tasks.append((idx, vid, ep.get("title", f"第{idx}集")))
 
-                    # Hard check: skip if already uploaded (TOS videos are never re-fetched)
-                    existing = db.query(EpisodeAsset).filter_by(
-                        daily_new_drama_id=drama.id, video_id=video_id
-                    ).first()
-                    if existing and existing.status == "uploaded":
-                        print(f"    [{idx}/{len(episodes_raw)}] ep{idx} ({video_id}) already uploaded, skipping")
-                        continue
-
-                    ea = existing or EpisodeAsset(
-                        daily_new_drama_id=drama.id,
-                        video_id=video_id,
-                        episode_no=idx,
-                        episode_title=ep.get("title", f"第{idx}集"),
-                        status="pending",
-                    )
-                    if not existing:
-                        db.add(ea)
-                    db.commit()
-
-                    try:
-                        video_url = _fetch_video_url(video_id)
-                        if not video_url:
-                            ea.status = "failed"
-                            ea.error_message = "No video_url in play_hg response"
-                            db.commit()
-                            continue
-
-                        object_key = f"{TOS_IMAGE_OBJECT_PREFIX}/videos/{drama.series_id}/{idx:03d}_{video_id}.mp4"
-                        object_url, file_size = _tos_fetch(video_url, object_key)
-                        ea.object_key = object_key
-                        ea.object_url = object_url
-                        ea.file_size = file_size
-                        ea.status = "uploaded"
-                        ea.error_message = None
-                        db.commit()
-                        size_mb = (file_size or 0) / 1024 / 1024
-                        print(f"    [{idx}/{len(episodes_raw)}] ep{idx} ({video_id}) → {size_mb:.1f}MB uploaded")
-                    except Exception as e:
-                        ea.status = "failed"
-                        ea.error_message = str(e)[:500]
-                        db.commit()
-                        print(f"    [{idx}/{len(episodes_raw)}] ep{idx} ({video_id}) FAILED: {e}")
+                # Concurrent upload — each thread uses its own db session
+                with ThreadPoolExecutor(max_workers=EPISODE_UPLOAD_CONCURRENCY) as ex:
+                    futures = {
+                        ex.submit(_process_episode_asset, drama.id, drama.series_id, vid, idx, title): (idx, vid)
+                        for idx, vid, title in tasks
+                    }
+                    done_count = 0
+                    for f in as_completed(futures):
+                        idx, vid = futures[f]
+                        done_count += 1
+                        try:
+                            ep_no, status, file_size = f.result()
+                            if status == "skipped":
+                                print(f"    [{done_count}/{len(tasks)}] ep{ep_no} ({vid}) already uploaded, skipped")
+                            elif status == "uploaded":
+                                size_mb = (file_size or 0) / 1024 / 1024
+                                print(f"    [{done_count}/{len(tasks)}] ep{ep_no} ({vid}) → {size_mb:.1f}MB uploaded")
+                            else:
+                                print(f"    [{done_count}/{len(tasks)}] ep{ep_no} ({vid}) FAILED")
+                        except Exception as e:
+                            print(f"    [{done_count}/{len(tasks)}] ep{idx} ({vid}) EXCEPTION: {e}")
             except Exception as e:
                 job.status = "failed"
                 job.error_message = f"episodes: {e}"[:500]

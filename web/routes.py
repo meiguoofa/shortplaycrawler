@@ -1,4 +1,5 @@
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date as date_cls, datetime as dt, timedelta
 
 from fastapi import APIRouter, Request, Query
@@ -14,6 +15,7 @@ from config import (
     DOUBAO_DEFAULT_IMAGE_MODEL,
     DOUBAO_IMAGE_MODELS,
     DOUBAO_TRANSLATE_MODELS,
+    DRAMA_PIPELINE_CONCURRENCY,
     MOBINOVA_DEFAULT_TRANSLATE_MODEL,
     MOBINOVA_IMAGE_MODEL,
     MOBINOVA_TRANSLATE_MODELS,
@@ -307,7 +309,7 @@ async def api_daily_new_run(req: RunPipelineRequest):
         db.close()
 
     def _bg_run():
-        for did in req.drama_ids:
+        def _run_one(did):
             try:
                 _run_pipeline(
                     daily_new_drama_id=did,
@@ -324,6 +326,9 @@ async def api_daily_new_run(req: RunPipelineRequest):
             except Exception as e:
                 import sys
                 print(f"[batch {req.batch_id}] drama {did} FAILED: {e}", file=sys.stderr, flush=True)
+
+        with ThreadPoolExecutor(max_workers=DRAMA_PIPELINE_CONCURRENCY) as ex:
+            list(ex.map(_run_one, req.drama_ids))
 
     t = threading.Thread(target=_bg_run, daemon=True)
     t.start()
@@ -540,7 +545,7 @@ async def api_cart_checkout(req: CartCheckoutRequest):
         db.close()
 
     def _bg_run():
-        for did in drama_ids:
+        def _run_one(did):
             try:
                 _run_pipeline(
                     daily_new_drama_id=did,
@@ -555,6 +560,9 @@ async def api_cart_checkout(req: CartCheckoutRequest):
             except Exception as e:
                 import sys
                 print(f"[batch {batch_id}] drama {did} FAILED: {e}", file=sys.stderr, flush=True)
+
+        with ThreadPoolExecutor(max_workers=DRAMA_PIPELINE_CONCURRENCY) as ex:
+            list(ex.map(_run_one, drama_ids))
 
     threading.Thread(target=_bg_run, daemon=True).start()
     return JSONResponse({
