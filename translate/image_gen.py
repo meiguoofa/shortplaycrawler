@@ -42,18 +42,39 @@ def generate_poster(
         body["image_url"] = "data:image/jpeg;base64," + base64.b64encode(reference_image_bytes).decode("ascii")
 
     # ARK images.generate doesn't accept image_url via OpenAI SDK param; use raw POST.
+    # Retry up to 3 times on transient errors (上游 400/5xx 偶发)
     import json
-    req = urllib.request.Request(
-        DOUBAO_BASE_URL + "/images/generations",
-        data=json.dumps(body).encode(),
-        headers={
-            "Authorization": f"Bearer {DOUBAO_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=180) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
+    import urllib.error
+    last_err = None
+    for attempt in range(1, 4):
+        req = urllib.request.Request(
+            DOUBAO_BASE_URL + "/images/generations",
+            data=json.dumps(body).encode(),
+            headers={
+                "Authorization": f"Bearer {DOUBAO_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=180) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            break
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8", errors="replace")[:500]
+            last_err = RuntimeError(f"HTTP {e.code} {e.reason}: {err_body}")
+            print(f"  [image_gen retry {attempt}/3] HTTP {e.code}: {err_body[:200]}")
+            if attempt < 3:
+                import time
+                time.sleep(2 ** attempt)
+        except Exception as e:
+            last_err = e
+            print(f"  [image_gen retry {attempt}/3] {type(e).__name__}: {e}")
+            if attempt < 3:
+                import time
+                time.sleep(2 ** attempt)
+    else:
+        raise last_err
 
     img_url = (data.get("data") or [{}])[0].get("url") if isinstance(data.get("data"), list) else None
     if not img_url:
