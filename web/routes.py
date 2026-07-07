@@ -349,11 +349,30 @@ async def api_daily_new_backfill(req: BackfillRequest):
 
 # ── Search ────────────────────────────────────────────────────────────────────
 
+@router.get("/api/search/platforms")
+async def api_search_platforms():
+    """Return list of search platforms for the frontend dropdown."""
+    from config import SEARCH_PLATFORMS
+    return JSONResponse({
+        "platforms": [
+            {"value": p["platform"], "label": p["label"]}
+            for p in SEARCH_PLATFORMS
+        ],
+    })
+
+
 @router.get("/api/search")
-async def api_search(q: str = Query(..., min_length=1), limit: int | None = Query(None, ge=1, le=100)):
-    """Aggregate search across 5 platforms, dedup by book_id. limit=N caps per keyword."""
+async def api_search(
+    q: str = Query(..., min_length=1),
+    limit: int | None = Query(None, ge=1, le=100),
+    platform: str = Query(...),
+):
+    """Search across one platform (selected by `platform` key). limit=N caps per keyword."""
     from crawler.search import fetch_search_all, normalize_search_item
-    raw = fetch_search_all(q, per_keyword_limit=limit)
+    try:
+        raw = fetch_search_all(q, per_keyword_limit=limit, platform_key=platform)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
     items = [normalize_search_item(r) for r in raw]
     return JSONResponse({"items": items, "count": len(items)})
 

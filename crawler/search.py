@@ -1,18 +1,24 @@
 import json
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.parse import urlencode
 
-from config import CRAWL_CODE, DEFAULT_SLEEP, SEARCH_ACTIONS, SEARCH_API_BASE
-from crawler.client import build_url, fetch_with_retry
+from config import CRAWL_CODE, DEFAULT_SLEEP, SEARCH_API_BASE, SEARCH_PLATFORMS
+from crawler.client import fetch_with_retry
 
 
-def fetch_search_one(keyword: str, action: str) -> list[dict]:
+def _build_url(keyword: str, action: str, platform: str) -> str:
+    params = [
+        ("platform", "wpf11"),
+        ("action", action),
+        ("name", keyword),
+        ("code", CRAWL_CODE),
+        ("platform", platform),
+    ]
+    return SEARCH_API_BASE + "?" + urlencode(params)
+
+
+def fetch_search_one(keyword: str, action: str, platform: str) -> list[dict]:
     """Call one search endpoint, return raw items list (only items with book_id+title)."""
-    url = build_url(SEARCH_API_BASE, {
-        "platform": "wpf11",
-        "action": action,
-        "name": keyword,
-        "code": CRAWL_CODE,
-    })
+    url = _build_url(keyword, action, platform)
     payload = fetch_with_retry(url, sleep_seconds=DEFAULT_SLEEP)
     data = payload.get("data") or []
     if not isinstance(data, list):
@@ -20,30 +26,31 @@ def fetch_search_one(keyword: str, action: str) -> list[dict]:
     return [it for it in data if it.get("book_id") and it.get("title")]
 
 
-def fetch_search_all(keyword: str, per_keyword_limit: int | None = None) -> list[dict]:
-    """Aggregate search across 5 platforms for one or more ';'-separated keywords.
+def fetch_search_all(keyword: str, per_keyword_limit: int | None = None,
+                     platform_key: str | None = None) -> list[dict]:
+    """Search across one or more ';'-separated keywords on a single platform.
 
+    platform_key selects the platform (e.g. 'hg'/'hgmj'/'hm'/'huolong'/'xingyadongli').
     When per_keyword_limit is set, each keyword contributes at most N items
     (after cross-keyword dedup by series_id).
     """
+    platform_cfg = next((p for p in SEARCH_PLATFORMS if p["platform"] == platform_key), None)
+    if not platform_cfg:
+        raise ValueError(f"unknown platform_key: {platform_key!r}")
+
     keywords = [k.strip() for k in keyword.split(";") if k.strip()]
     if not keywords:
         return []
+    action = platform_cfg["action"]
+    platform = platform_cfg["platform"]
     by_keyword: dict[str, list[dict]] = {k: [] for k in keywords}
-    tasks = [(k, action) for k in keywords for action in SEARCH_ACTIONS]
-    with ThreadPoolExecutor(max_workers=5) as ex:
-        futures = {ex.submit(fetch_search_one, k, a): (k, a) for k, a in tasks}
-        for f in as_completed(futures):
-            k, a = futures[f]
-            try:
-                items = f.result()
-            except Exception as e:
-                print(f"  [{k}/{a}] failed: {e}")
-                items = []
-            for item in items:
-                sid = str(item.get("book_id") or "")
-                if sid:
-                    by_keyword[k].append(item)
+    for k in keywords:
+        try:
+            by_keyword[k] = fetch_search_one(k, action, platform)
+        except Exception as e:
+            print(f"  [{k}/{action}/{platform}] failed: {e}")
+            by_keyword[k] = []
+
     seen: dict[str, dict] = {}
     for k in keywords:
         n = 0

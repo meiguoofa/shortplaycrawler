@@ -15,15 +15,30 @@
             const keyword = ref('');
             const submittedKeyword = ref('');
             const perKeywordLimit = ref(10);
+            const platformOptions = ref([]);
+            const selectedPlatform = ref('hg');
             const loading = ref(false);
             const error = ref('');
             const items = ref([]);
             const selectedSeriesIds = ref([]);
             const adding = ref(false);
 
+            onMounted(async () => {
+                try {
+                    const data = await apiGet('/api/search/platforms');
+                    platformOptions.value = data.platforms || [];
+                } catch (e) {
+                    notify.error('加载平台列表失败: ' + e.message);
+                }
+            });
+
             async function search() {
                 if (!keyword.value.trim()) {
                     notify.warning('请输入关键词');
+                    return;
+                }
+                if (!selectedPlatform.value) {
+                    notify.warning('请选择搜索源头');
                     return;
                 }
                 loading.value = true;
@@ -31,7 +46,8 @@
                 submittedKeyword.value = keyword.value.trim();
                 try {
                     const url = '/api/search?q=' + encodeURIComponent(submittedKeyword.value)
-                              + '&limit=' + perKeywordLimit.value;
+                              + '&limit=' + perKeywordLimit.value
+                              + '&platform=' + encodeURIComponent(selectedPlatform.value);
                     const data = await apiGet(url);
                     items.value = data.items || [];
                     selectedSeriesIds.value = [];
@@ -95,7 +111,9 @@
             const rowKey = (row) => row.series_id;
 
             return {
-                keyword, submittedKeyword, perKeywordLimit, loading, error, items,
+                keyword, submittedKeyword, perKeywordLimit,
+                platformOptions, selectedPlatform,
+                loading, error, items,
                 selectedSeriesIds, adding,
                 columns, rowKey,
                 search, addToCart,
@@ -105,8 +123,10 @@
             <page-shell title="搜索剧集">
                 <template #actions>
                     <div class="flex flex-wrap items-center gap-3">
+                        <n-select v-model:value="selectedPlatform" :options="platformOptions"
+                                  placeholder="选择源头" style="width: 180px;" />
                         <n-input v-model:value="keyword" placeholder="输入剧名，多个用 ; 分隔"
-                                 style="width: 360px;" @keyup.enter="search" />
+                                 style="width: 320px;" @keyup.enter="search" />
                         <n-input-number v-model:value="perKeywordLimit" :min="1" :max="100" :step="1"
                                         style="width: 150px;">
                             <template #prefix>每关键词</template>
@@ -116,7 +136,9 @@
                 </template>
 
                 <div v-if="submittedKeyword" class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                    关键词「<strong>{{ submittedKeyword }}</strong>」共搜到 {{ items.length }} 部剧（每关键词最多 {{ perKeywordLimit }} 条，5 平台聚合，按 series_id 去重）
+                    源头「<strong>{{ platformOptions.find(p => p.value === selectedPlatform)?.label || selectedPlatform }}</strong>」
+                    关键词「<strong>{{ submittedKeyword }}</strong>」共搜到 {{ items.length }} 部剧
+                    （每关键词最多 {{ perKeywordLimit }} 条，按 series_id 去重）
                 </div>
 
                 <loading-skeleton v-if="loading" type="list" :rows="6" />

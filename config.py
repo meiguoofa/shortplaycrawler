@@ -64,12 +64,12 @@ DAILY_NEW_TIMEZONE = "Asia/Shanghai"
 
 # Search (aggregated across 5 platforms)
 SEARCH_API_BASE = "http://36.138.76.25:4455/api/api.php"
-SEARCH_ACTIONS = [
-    "search_hg",
-    "search_dm_hg",
-    "search_hm",
-    "search_hl",
-    "search_dl",
+SEARCH_PLATFORMS = [
+    {"action": "search_hg",    "platform": "hg",            "label": "红果短剧"},
+    {"action": "search_dm_hg", "platform": "hgmj",          "label": "红果漫剧"},
+    {"action": "search_hm",    "platform": "hm",            "label": "河马短剧"},
+    {"action": "search_hl",    "platform": "huolong",       "label": "火龙漫剧"},
+    {"action": "search_dl",    "platform": "xingyadongli",  "label": "星芽/东梨短剧"},
 ]
 
 # Doubao (translation + image gen) via Volcengine ARK (OpenAI-compatible)
