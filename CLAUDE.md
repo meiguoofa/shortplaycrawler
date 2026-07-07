@@ -63,6 +63,27 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 
 
+## 部署
+
+服务器在新加坡（45.78.235.74），用户从中国大陆访问。架构是 **nginx:5173 → uvicorn:5174**（4 worker）。
+
+```bash
+# 启动 uvicorn（内部端口，只监听 127.0.0.1）
+python3 main.py serve --host 127.0.0.1 --port 5174 --workers 4
+
+# nginx 配置在 /etc/nginx/conf.d/short-drama.conf，监听 5173 反代 5174
+#   - 静态资源 /static/ 由 nginx 直发 + 30 天缓存
+#   - gzip 压缩 JS/CSS/JSON
+#   - keep-alive 复用 TCP 连接
+nginx -t && nginx -s reload
+
+# 访问 URL：http://45.78.235.74:5173（不要带其他端口）
+```
+
+80 端口留给其他业务，不占用。改 nginx 配置后必须 `nginx -t` 校验再 reload。
+
+---
+
 ### 5. 不要读取这个工程外文件
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.

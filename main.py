@@ -72,8 +72,15 @@ def cmd_crawl_full(args):
 
 def cmd_serve(args):
     import uvicorn
-    from web.app import app
-    uvicorn.run(app, host=args.host, port=args.port)
+    uvicorn.run(
+        "web.app:app",
+        host=args.host,
+        port=args.port,
+        workers=args.workers,
+        proxy_headers=True,
+        forwarded_allow_ips="*",
+        timeout_keep_alive=30,
+    )
 
 
 def main():
@@ -121,6 +128,7 @@ def main():
     p_serve = sub.add_parser("serve", help="Start web server")
     p_serve.add_argument("--host", default="0.0.0.0")
     p_serve.add_argument("--port", type=int, default=5173)
+    p_serve.add_argument("--workers", type=int, default=4, help="uvicorn worker 数（默认 4）")
 
     args = parser.parse_args()
 
