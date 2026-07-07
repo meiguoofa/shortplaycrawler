@@ -12,6 +12,7 @@ from config import (
     DEFAULT_TRANSLATE_USER_PROMPT,
     DOUBAO_DEFAULT_IMAGE_MODEL,
     DOUBAO_IMAGE_MODELS,
+    MOBINOVA_IMAGE_MODEL,
     TRANSLATE_LANGS,
 )
 from models import CartItem, DailyNewDrama, DramaEpisode, DramaSeries, EpisodeAsset, TranslationJob, get_session
@@ -85,7 +86,7 @@ async def api_config_defaults():
     """Return all default prompts, models, languages for the frontend."""
     return JSONResponse({
         "langs": TRANSLATE_LANGS,
-        "image_models": DOUBAO_IMAGE_MODELS,
+        "image_models": DOUBAO_IMAGE_MODELS + [MOBINOVA_IMAGE_MODEL],
         "default_image_model": DOUBAO_DEFAULT_IMAGE_MODEL,
         "default_image_prompt": DEFAULT_IMAGE_GEN_PROMPT,
         "default_translate_system_prompt": DEFAULT_TRANSLATE_SYSTEM_PROMPT,

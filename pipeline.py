@@ -18,7 +18,7 @@ from crawler.client import build_url, fetch_with_retry
 from crawler.play_url import _tos_fetch
 from models import DailyNewDrama, EpisodeAsset, TranslationJob, get_session
 from translate.doubao import translate_metadata
-from translate.image_gen import generate_poster, upload_poster_to_tos
+from translate.image_gen import generate_poster, generate_poster_mobinova, upload_poster_to_tos
 
 
 def _fetch_episodes_for_series(series_id: str) -> list[dict]:
@@ -164,11 +164,19 @@ def run_pipeline(
             job.image_prompt = final_prompt  # backward-compat: final value
             db.commit()
 
-            poster_bytes = generate_poster(
-                prompt=final_prompt,
-                reference_image_url=drama.cover_url,
-                model=image_model,
-            )
+            # Route by model name: openai/* → Mobinova, doubao-* → Doubao
+            if image_model and image_model.startswith("openai/"):
+                poster_bytes = generate_poster_mobinova(
+                    prompt=final_prompt,
+                    reference_image_url=drama.cover_url,
+                    model=image_model,
+                )
+            else:
+                poster_bytes = generate_poster(
+                    prompt=final_prompt,
+                    reference_image_url=drama.cover_url,
+                    model=image_model or DOUBAO_DEFAULT_IMAGE_MODEL,
+                )
             poster_obj_key = f"{TOS_IMAGE_OBJECT_PREFIX}/{drama.series_id}_{target_lang}.png"
             poster_url = upload_poster_to_tos(poster_bytes, poster_obj_key)
             job.poster_object_key = poster_obj_key

@@ -82,7 +82,13 @@ DOUBAO_IMAGE_MODELS = [
     "doubao-seedream-4-0-250828",
 ]
 DOUBAO_DEFAULT_IMAGE_MODEL = "doubao-seedream-4-0-250828"
-DOUBAO_IMAGE_SIZE = "2048x2048"  # min 3686400 px for 5-0/4-5
+DOUBAO_IMAGE_SIZE = "1536x2048"  # 3:4 竖版海报 (was 2048x2048)
+
+# Mobinova gpt-image-2 (OpenAI-compatible, text-to-image + edits, supports reference image)
+MOBINOVA_API_KEY = os.environ.get("MOBINOVA_API_KEY", "")
+MOBINOVA_BASE_URL = "https://image.mobinova.cc/v1"
+MOBINOVA_IMAGE_MODEL = "openai/gpt-image-2"
+MOBINOVA_IMAGE_SIZE = "1024x1536"  # 3:4 竖版
 
 # Translation target languages (ISO code → display name shown to LLM)
 TRANSLATE_LANGS = {
