@@ -76,12 +76,27 @@ SEARCH_PLATFORMS = [
 DOUBAO_API_KEY = os.environ.get("DOUBAO_API_KEY", "")
 DOUBAO_BASE_URL = os.environ.get("DOUBAO_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
 DOUBAO_TRANSLATE_MODEL = os.environ.get("DOUBAO_TRANSLATE_MODEL", "doubao-seed-2-0-pro-260215")
+DOUBAO_TRANSLATE_MODELS = [
+    "doubao-seed-2-0-pro-260215",
+]
+
+# Mobinova chat models for translation (gpt-5.4 etc.)
+MOBINOVA_CHAT_BASE_URL = "https://mobinova.cc/v1"
+MOBINOVA_CHAT_API_KEY = os.environ.get("MOBINOVA_CHAT_API_KEY", "")
+MOBINOVA_TRANSLATE_MODEL = os.environ.get("MOBINOVA_TRANSLATE_MODEL", "gpt-5.4")
+MOBINOVA_TRANSLATE_MODELS = [
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.5",
+]
+MOBINOVA_DEFAULT_TRANSLATE_MODEL = "gpt-5.4"
 DOUBAO_IMAGE_MODELS = [
     "doubao-seedream-5-0-260128",
     "doubao-seedream-4-5-251128",
     "doubao-seedream-4-0-250828",
 ]
 DOUBAO_DEFAULT_IMAGE_MODEL = "doubao-seedream-4-0-250828"
+DEFAULT_IMAGE_MODEL = "openai/gpt-image-2"  # 全局默认生图模型（UI 默认选这个）
 DOUBAO_IMAGE_SIZE = "1536x2048"  # 3:4 竖版海报 (was 2048x2048)
 
 # Mobinova gpt-image-2 (OpenAI-compatible, text-to-image + edits, supports reference image)

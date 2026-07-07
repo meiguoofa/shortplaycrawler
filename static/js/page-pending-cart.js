@@ -20,6 +20,7 @@
 
             const targetLang = ref('en');
             const imageModel = ref('');
+            const translateModel = ref('');
             const imagePrompt = ref('');
             const translateSystemPrompt = ref('');
             const translateUserPrompt = ref('');
@@ -41,6 +42,7 @@
             onMounted(async () => {
                 await config.load();
                 if (!imageModel.value) imageModel.value = config.defaultImageModel;
+                if (!translateModel.value) translateModel.value = config.defaultTranslateModel;
                 if (!imagePrompt.value) imagePrompt.value = config.defaultImagePrompt;
                 if (!translateSystemPrompt.value) translateSystemPrompt.value = config.defaultTranslateSystemPrompt;
                 if (!translateUserPrompt.value) translateUserPrompt.value = config.defaultTranslateUserPrompt;
@@ -52,6 +54,9 @@
                 ([code, name]) => ({ label: `${name} (${code})`, value: code })
             ));
             const imageModelOptions = computed(() => config.imageModels.map(
+                m => ({ label: m, value: m })
+            ));
+            const translateModelOptions = computed(() => config.translateModels.map(
                 m => ({ label: m, value: m })
             ));
             const firstSelected = computed(() => items.value[0]);
@@ -109,6 +114,7 @@
                         image_prompt: imagePrompt.value,
                         translate_system_prompt: translateSystemPrompt.value,
                         translate_user_prompt: translateUserPrompt.value,
+                        translate_model: translateModel.value,
                     });
                     notify.success(`批次 ${data.batch_id.slice(0, 8)} 已提交，共 ${data.drama_ids.length} 部剧`);
                     setTimeout(() => router.push('/daily-new/batches/' + data.batch_id), 1000);
@@ -159,9 +165,9 @@
 
             return {
                 loading, error, items,
-                targetLang, imageModel, imagePrompt,
+                targetLang, imageModel, translateModel, imagePrompt,
                 translateSystemPrompt, translateUserPrompt,
-                config, langName, langOptions, imageModelOptions,
+                config, langName, langOptions, imageModelOptions, translateModelOptions,
                 finalTranslateSystem, finalTranslateUser, finalImagePrompt,
                 columns, rowKey,
                 submitting, submitCheckout,
@@ -189,6 +195,10 @@
                                     <div class="min-w-[280px] flex-1 max-w-md">
                                         <div class="text-sm text-gray-500 dark:text-gray-400 mb-1">生图模型</div>
                                         <n-select v-model:value="imageModel" :options="imageModelOptions" />
+                                    </div>
+                                    <div class="min-w-[220px] flex-1 max-w-md">
+                                        <div class="text-sm text-gray-500 dark:text-gray-400 mb-1">翻译模型</div>
+                                        <n-select v-model:value="translateModel" :options="translateModelOptions" />
                                     </div>
                                     <div class="flex items-end">
                                         <span class="text-xs text-gray-400">可用变量: {target_lang} {synopsis} {title} {description}</span>

@@ -6,11 +6,16 @@ from config import (
     DOUBAO_API_KEY,
     DOUBAO_BASE_URL,
     DOUBAO_TRANSLATE_MODEL,
+    MOBINOVA_CHAT_API_KEY,
+    MOBINOVA_CHAT_BASE_URL,
     TRANSLATE_LANGS,
 )
 
 
-def _client() -> OpenAI:
+def _client(model: str) -> OpenAI:
+    """Route by model name: gpt-* → Mobinova, otherwise Doubao."""
+    if model.startswith("gpt-"):
+        return OpenAI(api_key=MOBINOVA_CHAT_API_KEY, base_url=MOBINOVA_CHAT_BASE_URL)
     return OpenAI(api_key=DOUBAO_API_KEY, base_url=DOUBAO_BASE_URL)
 
 
@@ -20,7 +25,7 @@ def _lang_display(lang_code: str) -> str:
 
 
 def translate_text(text: str, target_lang: str, context: str = "") -> str:
-    """Translate a single string to target_lang via doubao chat completions.
+    """Translate a single string to target_lang via chat completions.
 
     Args:
         text: Source text (Chinese).
@@ -38,7 +43,7 @@ def translate_text(text: str, target_lang: str, context: str = "") -> str:
         f"上下文：{context or '无'}\n"
         f"待翻译文本：\n{text}"
     )
-    resp = _client().chat.completions.create(
+    resp = _client(DOUBAO_TRANSLATE_MODEL).chat.completions.create(
         model=DOUBAO_TRANSLATE_MODEL,
         temperature=0.4,
         messages=[
@@ -55,6 +60,7 @@ def translate_metadata(
     target_lang: str,
     system_prompt_template: str | None = None,
     user_prompt_template: str | None = None,
+    translate_model: str | None = None,
 ) -> tuple[str, str, str, str]:
     """Translate title + description in one call (cost-effective).
 
@@ -64,9 +70,11 @@ def translate_metadata(
         target_lang: ISO code (en/zh/pt/pt-BR/id).
         system_prompt_template: optional template with {target_lang} placeholder.
         user_prompt_template: optional template with {title} and {description} placeholders.
+        translate_model: model name (gpt-* → Mobinova, doubao-* → Doubao). Defaults to DOUBAO_TRANSLATE_MODEL.
     Returns:
         (translated_title, translated_desc, final_system_prompt, final_user_prompt)
     """
+    model = translate_model or DOUBAO_TRANSLATE_MODEL
     lang_name = _lang_display(target_lang)
     sys_template = system_prompt_template or DEFAULT_TRANSLATE_SYSTEM_PROMPT
     usr_template = user_prompt_template or DEFAULT_TRANSLATE_USER_PROMPT
@@ -74,8 +82,8 @@ def translate_metadata(
     final_system = sys_template.format(target_lang=lang_name)
     final_user = usr_template.format(title=title or "", description=desc or "")
 
-    resp = _client().chat.completions.create(
-        model=DOUBAO_TRANSLATE_MODEL,
+    resp = _client(model).chat.completions.create(
+        model=model,
         temperature=0.4,
         messages=[
             {"role": "system", "content": final_system},

@@ -29,6 +29,8 @@
             imageModels: [],
             defaultImageModel: '',
             defaultImagePrompt: '',
+            translateModels: [],
+            defaultTranslateModel: '',
             defaultTranslateSystemPrompt: '',
             defaultTranslateUserPrompt: '',
             loaded: false,
@@ -43,6 +45,8 @@
                     this.imageModels = data.image_models || [];
                     this.defaultImageModel = data.default_image_model || '';
                     this.defaultImagePrompt = data.default_image_prompt || '';
+                    this.translateModels = data.translate_models || [];
+                    this.defaultTranslateModel = data.default_translate_model || '';
                     this.defaultTranslateSystemPrompt = data.default_translate_system_prompt || '';
                     this.defaultTranslateUserPrompt = data.default_translate_user_prompt || '';
                     this.loaded = true;

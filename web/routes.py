@@ -8,11 +8,15 @@ from sqlalchemy import func as sa_func
 
 from config import (
     DEFAULT_IMAGE_GEN_PROMPT,
+    DEFAULT_IMAGE_MODEL,
     DEFAULT_TRANSLATE_SYSTEM_PROMPT,
     DEFAULT_TRANSLATE_USER_PROMPT,
     DOUBAO_DEFAULT_IMAGE_MODEL,
     DOUBAO_IMAGE_MODELS,
+    DOUBAO_TRANSLATE_MODELS,
+    MOBINOVA_DEFAULT_TRANSLATE_MODEL,
     MOBINOVA_IMAGE_MODEL,
+    MOBINOVA_TRANSLATE_MODELS,
     TRANSLATE_LANGS,
 )
 from models import CartItem, DailyNewDrama, DramaEpisode, DramaSeries, EpisodeAsset, TranslationJob, get_session
@@ -87,8 +91,10 @@ async def api_config_defaults():
     return JSONResponse({
         "langs": TRANSLATE_LANGS,
         "image_models": DOUBAO_IMAGE_MODELS + [MOBINOVA_IMAGE_MODEL],
-        "default_image_model": DOUBAO_DEFAULT_IMAGE_MODEL,
+        "default_image_model": DEFAULT_IMAGE_MODEL,
         "default_image_prompt": DEFAULT_IMAGE_GEN_PROMPT,
+        "translate_models": DOUBAO_TRANSLATE_MODELS + MOBINOVA_TRANSLATE_MODELS,
+        "default_translate_model": MOBINOVA_DEFAULT_TRANSLATE_MODEL,
         "default_translate_system_prompt": DEFAULT_TRANSLATE_SYSTEM_PROMPT,
         "default_translate_user_prompt": DEFAULT_TRANSLATE_USER_PROMPT,
     })
@@ -244,10 +250,11 @@ async def api_daily_new_list(date: str = Query(None)):
 class RunPipelineRequest(BaseModel):
     drama_ids: list[int]
     target_lang: str
-    image_model: str = DOUBAO_DEFAULT_IMAGE_MODEL
+    image_model: str = DEFAULT_IMAGE_MODEL
     image_prompt: str | None = None
     translate_system_prompt: str | None = None
     translate_user_prompt: str | None = None
+    translate_model: str = MOBINOVA_DEFAULT_TRANSLATE_MODEL
     batch_id: str | None = None
     force_retry: bool = False
     force_reprocess_episodes: bool = False
@@ -309,6 +316,7 @@ async def api_daily_new_run(req: RunPipelineRequest):
                     image_prompt=req.image_prompt,
                     translate_system_prompt=req.translate_system_prompt,
                     translate_user_prompt=req.translate_user_prompt,
+                    translate_model=req.translate_model,
                     batch_id=req.batch_id,
                     force_retry=req.force_retry,
                     force_reprocess_episodes=req.force_reprocess_episodes,
@@ -451,10 +459,11 @@ async def api_cart_remove(item_id: int):
 
 class CartCheckoutRequest(BaseModel):
     target_lang: str
-    image_model: str = DOUBAO_DEFAULT_IMAGE_MODEL
+    image_model: str = DEFAULT_IMAGE_MODEL
     image_prompt: str | None = None
     translate_system_prompt: str | None = None
     translate_user_prompt: str | None = None
+    translate_model: str = MOBINOVA_DEFAULT_TRANSLATE_MODEL
 
 
 @router.post("/api/pending-cart/checkout")
@@ -540,6 +549,7 @@ async def api_cart_checkout(req: CartCheckoutRequest):
                     image_prompt=req.image_prompt,
                     translate_system_prompt=req.translate_system_prompt,
                     translate_user_prompt=req.translate_user_prompt,
+                    translate_model=req.translate_model,
                     batch_id=batch_id,
                 )
             except Exception as e:

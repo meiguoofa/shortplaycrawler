@@ -4,10 +4,12 @@ from datetime import datetime, timezone
 from config import (
     CRAWL_CODE,
     DEFAULT_IMAGE_GEN_PROMPT,
+    DEFAULT_IMAGE_MODEL,
     DEFAULT_TRANSLATE_SYSTEM_PROMPT,
     DEFAULT_TRANSLATE_USER_PROMPT,
     DOUBAO_DEFAULT_IMAGE_MODEL,
     EPISODES_URL,
+    MOBINOVA_DEFAULT_TRANSLATE_MODEL,
     PLAY_URL,
     PLAY_URL_SLEEP,
     TOS_IMAGE_OBJECT_PREFIX,
@@ -51,10 +53,11 @@ def _fetch_cover_bytes(cover_url: str) -> bytes | None:
 def run_pipeline(
     daily_new_drama_id: int,
     target_lang: str,
-    image_model: str = DOUBAO_DEFAULT_IMAGE_MODEL,
+    image_model: str = DEFAULT_IMAGE_MODEL,
     image_prompt: str | None = None,
     translate_system_prompt: str | None = None,
     translate_user_prompt: str | None = None,
+    translate_model: str = MOBINOVA_DEFAULT_TRANSLATE_MODEL,
     batch_id: str | None = None,
     force_retry: bool = False,
     force_reprocess_episodes: bool = False,
@@ -135,6 +138,7 @@ def run_pipeline(
                 target_lang,
                 system_prompt_template=job.translate_system_prompt,
                 user_prompt_template=job.translate_user_prompt,
+                translate_model=translate_model,
             )
             job.translated_title = translated_title
             job.translated_desc = translated_desc
