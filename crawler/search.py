@@ -20,12 +20,16 @@ def fetch_search_one(keyword: str, action: str) -> list[dict]:
     return [it for it in data if it.get("book_id") and it.get("title")]
 
 
-def fetch_search_all(keyword: str) -> list[dict]:
-    """Aggregate search across 5 platforms for one or more ';'-separated keywords."""
+def fetch_search_all(keyword: str, per_keyword_limit: int | None = None) -> list[dict]:
+    """Aggregate search across 5 platforms for one or more ';'-separated keywords.
+
+    When per_keyword_limit is set, each keyword contributes at most N items
+    (after cross-keyword dedup by series_id).
+    """
     keywords = [k.strip() for k in keyword.split(";") if k.strip()]
     if not keywords:
         return []
-    seen: dict[str, dict] = {}
+    by_keyword: dict[str, list[dict]] = {k: [] for k in keywords}
     tasks = [(k, action) for k in keywords for action in SEARCH_ACTIONS]
     with ThreadPoolExecutor(max_workers=5) as ex:
         futures = {ex.submit(fetch_search_one, k, a): (k, a) for k, a in tasks}
@@ -38,8 +42,18 @@ def fetch_search_all(keyword: str) -> list[dict]:
                 items = []
             for item in items:
                 sid = str(item.get("book_id") or "")
-                if sid and sid not in seen:
-                    seen[sid] = item
+                if sid:
+                    by_keyword[k].append(item)
+    seen: dict[str, dict] = {}
+    for k in keywords:
+        n = 0
+        for item in by_keyword[k]:
+            if per_keyword_limit is not None and n >= per_keyword_limit:
+                break
+            sid = str(item.get("book_id") or "")
+            if sid and sid not in seen:
+                seen[sid] = item
+                n += 1
     return list(seen.values())
 
 

@@ -14,6 +14,7 @@
 
             const keyword = ref('');
             const submittedKeyword = ref('');
+            const perKeywordLimit = ref(10);
             const loading = ref(false);
             const error = ref('');
             const items = ref([]);
@@ -29,7 +30,9 @@
                 error.value = '';
                 submittedKeyword.value = keyword.value.trim();
                 try {
-                    const data = await apiGet('/api/search?q=' + encodeURIComponent(submittedKeyword.value));
+                    const url = '/api/search?q=' + encodeURIComponent(submittedKeyword.value)
+                              + '&limit=' + perKeywordLimit.value;
+                    const data = await apiGet(url);
                     items.value = data.items || [];
                     selectedSeriesIds.value = [];
                     if (items.value.length === 0) notify.info('未搜到任何剧');
@@ -92,7 +95,7 @@
             const rowKey = (row) => row.series_id;
 
             return {
-                keyword, submittedKeyword, loading, error, items,
+                keyword, submittedKeyword, perKeywordLimit, loading, error, items,
                 selectedSeriesIds, adding,
                 columns, rowKey,
                 search, addToCart,
@@ -104,12 +107,16 @@
                     <div class="flex flex-wrap items-center gap-3">
                         <n-input v-model:value="keyword" placeholder="输入剧名，多个用 ; 分隔"
                                  style="width: 360px;" @keyup.enter="search" />
+                        <n-input-number v-model:value="perKeywordLimit" :min="1" :max="100" :step="1"
+                                        style="width: 150px;">
+                            <template #prefix>每关键词</template>
+                        </n-input-number>
                         <n-button type="primary" :loading="loading" @click="search">搜索</n-button>
                     </div>
                 </template>
 
                 <div v-if="submittedKeyword" class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                    关键词「<strong>{{ submittedKeyword }}</strong>」共搜到 {{ items.length }} 部剧（多个剧名用 ; 分隔，5 平台聚合，按 series_id 去重）
+                    关键词「<strong>{{ submittedKeyword }}</strong>」共搜到 {{ items.length }} 部剧（每关键词最多 {{ perKeywordLimit }} 条，5 平台聚合，按 series_id 去重）
                 </div>
 
                 <loading-skeleton v-if="loading" type="list" :rows="6" />
