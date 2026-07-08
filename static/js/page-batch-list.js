@@ -66,7 +66,15 @@
                 return { type: 'success', label: '全部完成' };
             }
 
-            return { loading, error, batches, stats, openBatch, exportBatch, copyBatchId, batchStatus, load };
+            function formatMissing(nos) {
+                if (!nos || !nos.length) return '';
+                const limit = 5;
+                const shown = nos.slice(0, limit).join('、');
+                const extra = nos.length > limit ? `…等${nos.length}集` : '集';
+                return `第${shown}${extra}漏选`;
+            }
+
+            return { loading, error, batches, stats, openBatch, exportBatch, copyBatchId, batchStatus, load, formatMissing };
         },
         template: `
             <page-shell title="批次列表">
@@ -117,8 +125,16 @@
                             <div class="text-xs text-gray-600 dark:text-gray-300">
                                 剧集进度: <strong>{{ b.ep_uploaded }}</strong>/{{ b.ep_total }}
                             </div>
-                            <div class="text-xs text-gray-500 dark:text-gray-400 max-h-[60px] overflow-hidden">
-                                <div v-for="d in b.dramas" :key="d.id" class="truncate">• {{ d.title }}</div>
+                            <div class="text-xs text-gray-500 dark:text-gray-400 max-h-[80px] overflow-hidden">
+                                <div v-for="d in b.dramas" :key="d.id" class="truncate">
+                                    • {{ d.title }}
+                                    <span class="text-gray-400 dark:text-gray-500">
+                                        剧集: {{ d.uploaded_eps }}/{{ d.episode_cnt || '?' }}
+                                        <span v-if="d.missing_ep_nos && d.missing_ep_nos.length" class="text-orange-500 dark:text-orange-400">
+                                            {{ formatMissing(d.missing_ep_nos) }}
+                                        </span>
+                                    </span>
+                                </div>
                             </div>
                             <div class="flex gap-2 pt-3 border-t dark:border-gray-700" @click.stop>
                                 <n-button size="small" type="success" :disabled="b.pending_count > 0"

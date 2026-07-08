@@ -48,7 +48,15 @@
                 { label: batch.value ? batch.value.batch_id.slice(0, 12) + '...' : '详情' },
             ]);
 
-            return { loading, error, batch, activeNames, breadcrumbs, load };
+            function formatMissing(nos) {
+                if (!nos || !nos.length) return '';
+                const limit = 5;
+                const shown = nos.slice(0, limit).join('、');
+                const extra = nos.length > limit ? `…等${nos.length}集` : '集';
+                return `第${shown}${extra}漏选`;
+            }
+
+            return { loading, error, batch, activeNames, breadcrumbs, load, formatMissing };
         },
         template: `
             <page-shell v-if="batch" :title="batch.batch_id.slice(0, 16) + '...'" subtitle="批次详情">
@@ -96,6 +104,10 @@
                                         <n-tag size="small" type="info">{{ job.target_lang }}</n-tag>
                                         <span class="text-xs text-gray-500 dark:text-gray-400">
                                             剧集: {{ job.uploaded_episodes }}/{{ job.total_episodes }}
+                                        </span>
+                                        <span v-if="job.missing_ep_nos && job.missing_ep_nos.length"
+                                              class="text-xs text-orange-500 dark:text-orange-400">
+                                            {{ formatMissing(job.missing_ep_nos) }}
                                         </span>
                                         <span v-if="job.error_message" class="text-xs text-red-500 truncate max-w-[200px]">
                                             ⚠️ {{ job.error_message.slice(0, 50) }}

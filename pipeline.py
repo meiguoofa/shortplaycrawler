@@ -262,10 +262,13 @@ def run_pipeline(
                 db.commit()
 
                 # Build task list (skip empty video_id)
+                if drama.episode_cnt and len(episodes_raw) < drama.episode_cnt:
+                    print(f"  WARN: API returned {len(episodes_raw)} episodes but episode_cnt={drama.episode_cnt} (gap={drama.episode_cnt - len(episodes_raw)})")
                 tasks = []
                 for idx, ep in enumerate(episodes_raw, 1):
                     vid = str(ep.get("video_id") or "")
                     if not vid:
+                        print(f"  WARN: ep{idx} has no video_id, skipping")
                         continue
                     tasks.append((idx, vid, ep.get("title", f"第{idx}集")))
 

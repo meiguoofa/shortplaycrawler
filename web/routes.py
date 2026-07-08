@@ -30,7 +30,8 @@ router = APIRouter()
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-def _serialize_drama(d: DailyNewDrama) -> dict:
+def _serialize_drama(d: DailyNewDrama, uploaded_eps: int = 0,
+                     missing_ep_nos: list | None = None) -> dict:
     return {
         "id": d.id,
         "series_id": d.series_id,
@@ -41,6 +42,8 @@ def _serialize_drama(d: DailyNewDrama) -> dict:
         "category": d.category,
         "author": d.author,
         "description": d.description,
+        "uploaded_eps": uploaded_eps,
+        "missing_ep_nos": missing_ep_nos or [],
     }
 
 
@@ -59,7 +62,8 @@ def _serialize_cart(c: CartItem) -> dict:
 
 
 def _serialize_job(j: TranslationJob, drama: DailyNewDrama | None = None,
-                    uploaded_eps: int = 0, total_eps: int = 0) -> dict:
+                    uploaded_eps: int = 0, total_eps: int = 0,
+                    missing_ep_nos: list | None = None) -> dict:
     return {
         "id": j.id,
         "daily_new_drama_id": j.daily_new_drama_id,
@@ -82,6 +86,7 @@ def _serialize_job(j: TranslationJob, drama: DailyNewDrama | None = None,
         "drama": _serialize_drama(drama) if drama else None,
         "uploaded_episodes": uploaded_eps,
         "total_episodes": total_eps,
+        "missing_ep_nos": missing_ep_nos or [],
     }
 
 
@@ -601,13 +606,24 @@ async def api_batches_list():
             failed = sum(1 for j in jobs if j.status == "failed")
             pending = sum(1 for j in jobs if j.status not in ("done", "failed"))
 
-            ep_total = db.query(EpisodeAsset).filter(
+            # Per-drama episode tracking
+            all_eps = db.query(EpisodeAsset).filter(
                 EpisodeAsset.daily_new_drama_id.in_(drama_ids)
-            ).count() if drama_ids else 0
-            ep_uploaded = db.query(EpisodeAsset).filter(
-                EpisodeAsset.daily_new_drama_id.in_(drama_ids),
-                EpisodeAsset.status == "uploaded",
-            ).count() if drama_ids else 0
+            ).all() if drama_ids else []
+            eps_by_drama: dict[int, list] = {}
+            for ea in all_eps:
+                eps_by_drama.setdefault(ea.daily_new_drama_id, []).append(ea)
+
+            ep_uploaded = sum(1 for ea in all_eps if ea.status == "uploaded")
+            ep_total = sum((d.episode_cnt or 0) for d in dramas)
+
+            def _drama_missing(d):
+                eps = eps_by_drama.get(d.id, [])
+                uploaded_nos = {ea.episode_no for ea in eps if ea.status == "uploaded" and ea.episode_no}
+                up_count = len(uploaded_nos)
+                expected = d.episode_cnt or 0
+                missing = sorted(set(range(1, expected + 1)) - uploaded_nos) if expected else []
+                return _serialize_drama(d, uploaded_eps=up_count, missing_ep_nos=missing)
 
             batches.append({
                 "batch_id": r.batch_id,
@@ -617,7 +633,7 @@ async def api_batches_list():
                 "done_count": done,
                 "failed_count": failed,
                 "pending_count": pending,
-                "dramas": [_serialize_drama(d) for d in dramas],
+                "dramas": [_drama_missing(d) for d in dramas],
                 "ep_uploaded": ep_uploaded,
                 "ep_total": ep_total,
             })
@@ -638,8 +654,11 @@ async def api_batch_detail(batch_id: str):
         for j in jobs:
             drama = db.query(DailyNewDrama).filter_by(id=j.daily_new_drama_id).first()
             eps = db.query(EpisodeAsset).filter_by(daily_new_drama_id=j.daily_new_drama_id).all()
-            uploaded = sum(1 for e in eps if e.status == "uploaded")
-            job_data.append(_serialize_job(j, drama, uploaded, len(eps)))
+            uploaded_nos = {e.episode_no for e in eps if e.status == "uploaded" and e.episode_no}
+            uploaded = len(uploaded_nos)
+            expected = (drama.episode_cnt or 0) if drama else 0
+            missing = sorted(set(range(1, expected + 1)) - uploaded_nos) if expected else []
+            job_data.append(_serialize_job(j, drama, uploaded, expected, missing))
         return JSONResponse({
             "batch_id": batch_id,
             "jobs": job_data,
