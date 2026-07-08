@@ -4,6 +4,10 @@ __pycache__/
 .env
 *.db
 node_modules/
+server.log
+templates.bak/
+2026-*-需求.md
+爬取说明
 
 # Sensitive config (contains plaintext TOS credentials)
 对象存储相关配置信息

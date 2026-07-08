@@ -11,7 +11,7 @@ if os.path.exists(_env_path):
                 os.environ.setdefault(k.strip(), v.strip())
 
 # API
-CRAWL_CODE = "Q4T1C3R0EX0E"
+CRAWL_CODE = os.environ.get("CRAWL_CODE", "")
 RANKING_BASE_URL = "http://36.138.76.25:4455/tool/duanju/hg/%E6%8E%92%E8%A1%8C%E6%A6%9C/%E7%AD%9B%E9%80%89%E8%BF%9B%E5%85%A5.php"
 DETAIL_URL = "http://36.138.76.25:4455/api/api.php?platform=wpf11&action=detail_hg"
 EPISODES_URL = "http://36.138.76.25:4455/api/api.php?platform=wpf11&action=book_hg"
