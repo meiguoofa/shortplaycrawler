@@ -147,6 +147,22 @@
         return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     }
 
+    function copyText(text) {
+        if (navigator.clipboard && window.isSecureContext) {
+            return navigator.clipboard.writeText(text);
+        }
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        try { document.execCommand('copy'); } catch (e) { /* noop */ }
+        document.body.removeChild(ta);
+        return Promise.resolve();
+    }
+
     function statusBadgeType(status) {
         return {
             done: 'success',
@@ -257,6 +273,6 @@
         useConfigStore, useThemeStore,
         apiGet, apiPost, apiDelete, genBatchId, substitute, truncate,
         formatDateTime, statusBadgeType, statusLabel, AppLayout,
-        usePoll, useNotify,
+        usePoll, useNotify, copyText,
     };
 })();

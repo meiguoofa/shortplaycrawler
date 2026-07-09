@@ -2,7 +2,7 @@
 (function () {
     'use strict';
     const { defineComponent, ref, computed, onMounted, h } = window.__appShared.Vue;
-    const { apiGet, useNotify, JobStatusTag } = window.__appShared;
+    const { apiGet, useNotify, JobStatusTag, copyText } = window.__appShared;
     const { useRouter } = window.__appShared.VueRouter;
     const { usePoll } = window.__appShared;
     const { PageShell, EmptyState, LoadingSkeleton, ErrorState } = window.__appShared;
@@ -57,7 +57,7 @@
             }
 
             function copyBatchId(batchId) {
-                navigator.clipboard.writeText(batchId).then(() => notify.success('已复制批次 ID'));
+                copyText(batchId).then(() => notify.success('已复制批次 ID'));
             }
 
             function batchStatus(b) {
