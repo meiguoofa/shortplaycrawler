@@ -34,7 +34,7 @@ MAX_RETRIES = 3
 
 # Crawl settings
 DEFAULT_LIMIT = 100
-VIDEO_QUALITY = "720p"
+VIDEO_QUALITY = "1080p"
 
 # Database
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
