@@ -2,7 +2,7 @@
 (function () {
     'use strict';
     const { defineComponent, ref, computed, onMounted, h } = window.__appShared.Vue;
-    const { apiGet, useNotify, JobStatusTag } = window.__appShared;
+    const { apiGet, apiPost, useNotify, useDialog, JobStatusTag } = window.__appShared;
     const { useRoute, useRouter } = window.__appShared.VueRouter;
     const { usePoll } = window.__appShared;
     const { PageShell, LoadingSkeleton, ErrorState, Breadcrumbs } = window.__appShared;
@@ -13,10 +13,13 @@
             const route = useRoute();
             const router = useRouter();
             const notify = useNotify();
+            const dialog = useDialog();
             const loading = ref(true);
             const error = ref('');
             const batch = ref(null);
             const activeNames = ref([]);
+            const retrying = ref(false);
+            const retryingJobId = ref(null);
 
             async function load(opts = {}) {
                 const silent = opts.silent;
@@ -56,7 +59,60 @@
                 return `第${shown}${extra}漏选`;
             }
 
-            return { loading, error, batch, activeNames, breadcrumbs, load, formatMissing };
+            function retryAllFailed() {
+                dialog.confirm({
+                    title: '重试所有失败',
+                    content: '将重新生成失败海报并补抓所有漏选剧集。已上传的剧集不会重复处理。',
+                    positiveText: '开始重试',
+                    onConfirm: async () => {
+                        retrying.value = true;
+                        try {
+                            const data = await apiPost(
+                                '/api/daily-new/batches/' + route.params.batch_id + '/retry',
+                                { retry_posters: true, retry_episodes: true }
+                            );
+                            notify.success(`已提交重试: ${data.retried_count} 部剧`);
+                            await load({ silent: false });
+                        } catch (e) {
+                            notify.error('重试失败: ' + e.message);
+                        } finally {
+                            retrying.value = false;
+                        }
+                    },
+                });
+            }
+
+            function retryJob(job, mode) {
+                // mode: 'poster' | 'episodes' | 'all'
+                const body = mode === 'poster'
+                    ? { drama_ids: [job.daily_new_drama_id], retry_posters: true, retry_episodes: false }
+                    : mode === 'episodes'
+                    ? { drama_ids: [job.daily_new_drama_id], retry_posters: false, retry_episodes: true }
+                    : { drama_ids: [job.daily_new_drama_id], retry_posters: true, retry_episodes: true };
+                const label = mode === 'poster' ? '海报' : mode === 'episodes' ? '漏集' : '全部';
+                dialog.confirm({
+                    title: `重试${label}`,
+                    content: `剧名: ${job.drama ? job.drama.title : '?'}${mode === 'episodes' ? '（仅补抓漏选剧集，不重新生成海报）' : ''}`,
+                    positiveText: '确认重试',
+                    onConfirm: async () => {
+                        retryingJobId.value = job.id;
+                        try {
+                            await apiPost(
+                                '/api/daily-new/batches/' + route.params.batch_id + '/retry',
+                                body
+                            );
+                            notify.success(`已提交重试: ${label}`);
+                            await load({ silent: false });
+                        } catch (e) {
+                            notify.error('重试失败: ' + e.message);
+                        } finally {
+                            retryingJobId.value = null;
+                        }
+                    },
+                });
+            }
+
+            return { loading, error, batch, activeNames, breadcrumbs, load, formatMissing, retrying, retryingJobId, retryAllFailed, retryJob };
         },
         template: `
             <page-shell v-if="batch" :title="batch.batch_id.slice(0, 16) + '...'" subtitle="批次详情">
@@ -86,6 +142,9 @@
                                 </n-statistic>
                             </div>
                             <div class="flex gap-2">
+                                <n-button size="small" type="warning" :loading="retrying"
+                                          :disabled="batch.pending_count > 0 || (batch.failed_count === 0 && !batch.jobs.some(j => j.missing_ep_nos && j.missing_ep_nos.length))"
+                                          @click="retryAllFailed">重试所有失败</n-button>
                                 <n-button size="small" type="success" :disabled="batch.pending_count > 0"
                                           @click="$router.push('/api/daily-new/batches/' + batch.batch_id + '/export?format=csv')">导出 CSV</n-button>
                                 <n-button size="small" type="info" :disabled="batch.pending_count > 0"
@@ -115,8 +174,16 @@
                                     </div>
                                 </template>
                                 <template #header-extra>
-                                    <img v-if="job.poster_object_url" :src="job.poster_object_url" :alt="job.drama ? job.drama.title : ''"
-                                         class="w-10 h-14 object-cover rounded" />
+                                    <div class="flex items-center gap-2">
+                                        <n-button v-if="job.error_message && job.error_message.startsWith('poster_gen:')"
+                                                  size="tiny" type="warning" :loading="retryingJobId === job.id"
+                                                  @click.stop="retryJob(job, 'poster')">重试海报</n-button>
+                                        <n-button v-if="job.missing_ep_nos && job.missing_ep_nos.length"
+                                                  size="tiny" type="warning" :loading="retryingJobId === job.id"
+                                                  @click.stop="retryJob(job, 'episodes')">重试漏集</n-button>
+                                        <img v-if="job.poster_object_url" :src="job.poster_object_url" :alt="job.drama ? job.drama.title : ''"
+                                             class="w-10 h-14 object-cover rounded" />
+                                    </div>
                                 </template>
 
                                 <div class="space-y-5">

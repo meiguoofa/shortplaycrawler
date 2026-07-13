@@ -66,6 +66,28 @@ def _process_episode_asset(drama_id: int, series_id: str, video_id: str,
         if existing and existing.status == "uploaded":
             return episode_no, "skipped", existing.file_size
 
+        # 同 video_id 在其他 drama 已上传到 TOS 时复用，避免 object_key 冲突 (TOS 409)
+        sibling = db.query(EpisodeAsset).filter_by(
+            video_id=video_id, status="uploaded"
+        ).first()
+        if sibling:
+            ea = existing or EpisodeAsset(
+                daily_new_drama_id=drama_id,
+                video_id=video_id,
+                episode_no=episode_no,
+                episode_title=episode_title,
+                status="pending",
+            )
+            if not existing:
+                db.add(ea)
+            ea.object_key = sibling.object_key
+            ea.object_url = sibling.object_url
+            ea.file_size = sibling.file_size
+            ea.status = "uploaded"
+            ea.error_message = None
+            db.commit()
+            return episode_no, "skipped", ea.file_size
+
         ea = existing or EpisodeAsset(
             daily_new_drama_id=drama_id,
             video_id=video_id,
@@ -95,8 +117,26 @@ def _process_episode_asset(drama_id: int, series_id: str, video_id: str,
             db.commit()
             return episode_no, "uploaded", file_size
         except Exception as e:
+            # TOS 409: object 已存在（历史上传记录丢失），head_object 确认后视为已上传
+            err_str = str(e)
+            if "already exists" in err_str and "409" in err_str:
+                try:
+                    from crawler.play_url import _get_tos_client
+                    from config import TOS_CONFIG
+                    client = _get_tos_client()
+                    head = client.head_object(TOS_CONFIG["bucket"], object_key)
+                    file_size = head.content_length if hasattr(head, "content_length") else None
+                    ea.object_key = object_key
+                    ea.object_url = f"{TOS_CONFIG['public_base_url']}/{object_key}"
+                    ea.file_size = file_size
+                    ea.status = "uploaded"
+                    ea.error_message = None
+                    db.commit()
+                    return episode_no, "uploaded", file_size
+                except Exception:
+                    pass  # head 也失败，走正常 failed 路径
             ea.status = "failed"
-            ea.error_message = str(e)[:500]
+            ea.error_message = err_str[:500]
             db.commit()
             return episode_no, "failed", None
     finally:
@@ -114,6 +154,7 @@ def run_pipeline(
     batch_id: str | None = None,
     force_retry: bool = False,
     force_reprocess_episodes: bool = False,
+    retry_posters: bool = True,
 ) -> TranslationJob:
     """End-to-end: translate metadata + regenerate poster + upload ALL episodes to TOS.
 
@@ -206,45 +247,51 @@ def run_pipeline(
             raise
 
         # ── Step 2: regenerate poster ──
-        job.status = "poster_generating"
-        db.commit()
-        try:
-            # Truncate synopsis to keep prompt under doubao's limit (avoids HTTP 400)
-            synopsis_short = (translated_desc or "")[:200]
-            template = job.image_prompt_template or image_prompt or DEFAULT_IMAGE_GEN_PROMPT
-            final_prompt = template.format(
-                target_lang=lang_display,
-                synopsis=synopsis_short,
-            )
-            # Store both template and final value
-            job.image_prompt_template = template
-            job.image_prompt = final_prompt  # backward-compat: final value
+        # 海报失败不阻断剧集抓取：poster_failed 标志记录失败，最终决定 status
+        poster_failed = False
+        if not retry_posters:
+            print(f"  Skipping poster gen (retry_posters=False)")
+        else:
+            job.status = "poster_generating"
             db.commit()
+            try:
+                # Truncate synopsis to keep prompt under doubao's limit (avoids HTTP 400)
+                synopsis_short = (translated_desc or "")[:200]
+                template = job.image_prompt_template or image_prompt or DEFAULT_IMAGE_GEN_PROMPT
+                final_prompt = template.format(
+                    target_lang=lang_display,
+                    synopsis=synopsis_short,
+                )
+                # Store both template and final value
+                job.image_prompt_template = template
+                job.image_prompt = final_prompt  # backward-compat: final value
+                db.commit()
 
-            # Route by model name: openai/* → Mobinova, doubao-* → Doubao
-            if image_model and image_model.startswith("openai/"):
-                poster_bytes = generate_poster_mobinova(
-                    prompt=final_prompt,
-                    reference_image_url=drama.cover_url,
-                    model=image_model,
-                )
-            else:
-                poster_bytes = generate_poster(
-                    prompt=final_prompt,
-                    reference_image_url=drama.cover_url,
-                    model=image_model or DOUBAO_DEFAULT_IMAGE_MODEL,
-                )
-            poster_obj_key = f"{TOS_IMAGE_OBJECT_PREFIX}/{drama.series_id}_{target_lang}.png"
-            poster_url = upload_poster_to_tos(poster_bytes, poster_obj_key)
-            job.poster_object_key = poster_obj_key
-            job.poster_object_url = poster_url
-            db.commit()
-            print(f"  Poster uploaded: {poster_url} ({len(poster_bytes)} bytes)")
-        except Exception as e:
-            job.status = "failed"
-            job.error_message = f"poster_gen: {e}"[:500]
-            db.commit()
-            raise
+                # Route by model name: openai/* -> Mobinova, doubao-* -> Doubao
+                if image_model and image_model.startswith("openai/"):
+                    poster_bytes = generate_poster_mobinova(
+                        prompt=final_prompt,
+                        reference_image_url=drama.cover_url,
+                        model=image_model,
+                    )
+                else:
+                    poster_bytes = generate_poster(
+                        prompt=final_prompt,
+                        reference_image_url=drama.cover_url,
+                        model=image_model or DOUBAO_DEFAULT_IMAGE_MODEL,
+                    )
+                poster_obj_key = f"{TOS_IMAGE_OBJECT_PREFIX}/{drama.series_id}_{target_lang}.png"
+                poster_url = upload_poster_to_tos(poster_bytes, poster_obj_key)
+                job.poster_object_key = poster_obj_key
+                job.poster_object_url = poster_url
+                db.commit()
+                print(f"  Poster uploaded: {poster_url} ({len(poster_bytes)} bytes)")
+            except Exception as e:
+                poster_failed = True
+                job.error_message = f"poster_gen: {e}"[:500]
+                db.commit()
+                print(f"  WARN: poster gen failed, continuing to episodes: {e}")
+                # 不 raise，继续 Step 3 抓剧集
 
         # ── Step 3: fetch episode list + upload ALL episodes to TOS ──
         # CRITICAL: TOS already-uploaded episodes are NEVER re-fetched.
@@ -300,10 +347,11 @@ def run_pipeline(
                 raise
 
         # ── Done ──
-        job.status = "done"
+        # 海报失败时 status=failed（但剧集已上传，可单独重试海报）
+        job.status = "failed" if poster_failed else "done"
         job.updated_at = datetime.now(timezone.utc)
         db.commit()
-        print(f"=== Pipeline done: job_id={job.id} ===")
+        print(f"=== Pipeline done: job_id={job.id} (poster_failed={poster_failed}) ===")
         return job
 
     finally:

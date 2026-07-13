@@ -2,7 +2,7 @@
 (function () {
     'use strict';
     const { defineComponent, ref, computed, onMounted, h } = window.__appShared.Vue;
-    const { apiGet, useNotify, JobStatusTag, copyText } = window.__appShared;
+    const { apiGet, apiPost, useNotify, useDialog, JobStatusTag, copyText } = window.__appShared;
     const { useRouter } = window.__appShared.VueRouter;
     const { usePoll } = window.__appShared;
     const { PageShell, EmptyState, LoadingSkeleton, ErrorState } = window.__appShared;
@@ -12,9 +12,11 @@
         setup() {
             const router = useRouter();
             const notify = useNotify();
+            const dialog = useDialog();
             const loading = ref(true);
             const error = ref('');
             const batches = ref([]);
+            const retrying = ref(false);
 
             async function load(opts = {}) {
                 const silent = opts.silent;
@@ -74,7 +76,30 @@
                 return `第${shown}${extra}漏选`;
             }
 
-            return { loading, error, batches, stats, openBatch, exportBatch, copyBatchId, batchStatus, load, formatMissing };
+            function retryBatch(batchId) {
+                dialog.confirm({
+                    title: '重试失败任务',
+                    content: '将重新生成失败的海报并补抓漏选剧集。已上传的剧集不会重复处理。',
+                    positiveText: '开始重试',
+                    onConfirm: async () => {
+                        retrying.value = true;
+                        try {
+                            const data = await apiPost(
+                                '/api/daily-new/batches/' + batchId + '/retry',
+                                { retry_posters: true, retry_episodes: true }
+                            );
+                            notify.success(`已提交重试: ${data.retried_count} 部剧`);
+                            await load({ silent: false });
+                        } catch (e) {
+                            notify.error('重试失败: ' + e.message);
+                        } finally {
+                            retrying.value = false;
+                        }
+                    },
+                });
+            }
+
+            return { loading, error, batches, stats, openBatch, exportBatch, copyBatchId, batchStatus, load, formatMissing, retrying, retryBatch };
         },
         template: `
             <page-shell title="批次列表">
@@ -141,6 +166,9 @@
                                           @click="exportBatch(b.batch_id, 'csv')">CSV</n-button>
                                 <n-button size="small" type="info" :disabled="b.pending_count > 0"
                                           @click="exportBatch(b.batch_id, 'xlsx')">Excel</n-button>
+                                <n-button size="small" type="warning" :loading="retrying"
+                                          :disabled="b.pending_count > 0 || (b.failed_count === 0 && !b.dramas.some(d => d.missing_ep_nos && d.missing_ep_nos.length))"
+                                          @click="retryBatch(b.batch_id)">重试失败</n-button>
                             </div>
                         </div>
                     </n-card>

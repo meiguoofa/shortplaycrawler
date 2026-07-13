@@ -86,6 +86,20 @@
         };
     };
 
+    // Naive UI dialog helper (must be called inside setup)
+    const useDialog = () => {
+        const dialog = naive.useDialog();
+        return {
+            confirm: (opts) => dialog.warning({
+                title: opts.title || '确认',
+                content: opts.content || '',
+                positiveText: opts.positiveText || '确认',
+                negativeText: opts.negativeText || '取消',
+                onPositiveClick: () => opts.onConfirm && opts.onConfirm(),
+            }),
+        };
+    };
+
     // ─────────────────────────────────────────────────────────────────────
     // API helpers
     // ─────────────────────────────────────────────────────────────────────
@@ -273,6 +287,6 @@
         useConfigStore, useThemeStore,
         apiGet, apiPost, apiDelete, genBatchId, substitute, truncate,
         formatDateTime, statusBadgeType, statusLabel, AppLayout,
-        usePoll, useNotify, copyText,
+        usePoll, useNotify, useDialog, copyText,
     };
 })();

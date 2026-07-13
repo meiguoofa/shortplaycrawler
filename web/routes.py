@@ -265,6 +265,7 @@ class RunPipelineRequest(BaseModel):
     batch_id: str | None = None
     force_retry: bool = False
     force_reprocess_episodes: bool = False
+    retry_posters: bool = True
 
 
 @router.post("/api/daily-new/run")
@@ -327,6 +328,7 @@ async def api_daily_new_run(req: RunPipelineRequest):
                     batch_id=req.batch_id,
                     force_retry=req.force_retry,
                     force_reprocess_episodes=req.force_reprocess_episodes,
+                    retry_posters=req.retry_posters,
                 )
             except Exception as e:
                 import sys
@@ -669,6 +671,94 @@ async def api_batch_detail(batch_id: str):
         })
     finally:
         db.close()
+
+
+class BatchRetryRequest(BaseModel):
+    drama_ids: list[int] | None = None  # 省略则自动选 failed 或有漏集的 job
+    retry_posters: bool = True
+    retry_episodes: bool = True
+
+
+@router.post("/api/daily-new/batches/{batch_id}/retry")
+async def api_batch_retry(batch_id: str, req: BatchRetryRequest):
+    """重试批次中失败的海报和/或漏选剧集。已上传的剧集不会重复处理。"""
+    import threading
+    from pipeline import run_pipeline as _run_pipeline
+
+    db = get_session()
+    try:
+        all_jobs = db.query(TranslationJob).filter_by(batch_id=batch_id).all()
+        if not all_jobs:
+            return JSONResponse({"error": f"batch {batch_id} not found"}, status_code=404)
+        target_lang = all_jobs[0].target_lang
+
+        if req.drama_ids:
+            selected = [j for j in all_jobs if j.daily_new_drama_id in req.drama_ids]
+        else:
+            selected = []
+            for j in all_jobs:
+                if j.status == "failed":
+                    selected.append(j)
+                    continue
+                drama = db.query(DailyNewDrama).filter_by(id=j.daily_new_drama_id).first()
+                if not drama or not drama.episode_cnt:
+                    continue
+                eps = db.query(EpisodeAsset).filter_by(daily_new_drama_id=j.daily_new_drama_id).all()
+                uploaded = sum(1 for e in eps if e.status == "uploaded" and e.episode_no)
+                if uploaded < (drama.episode_cnt or 0):
+                    selected.append(j)
+
+        if not selected:
+            return JSONResponse({"error": "no jobs to retry"}, status_code=400)
+
+        # 捕获每个 job 的 prompt/model 配置（跨线程安全读取）
+        job_configs = {}
+        for j in selected:
+            job_configs[j.daily_new_drama_id] = {
+                "image_model": j.image_model or DEFAULT_IMAGE_MODEL,
+                "image_prompt": j.image_prompt_template,
+                "translate_system_prompt": j.translate_system_prompt,
+                "translate_user_prompt": j.translate_user_prompt,
+            }
+            j.status = "pending"
+            j.error_message = None
+        db.commit()
+        drama_ids = [j.daily_new_drama_id for j in selected]
+    finally:
+        db.close()
+
+    def _bg_run():
+        def _run_one(did):
+            cfg = job_configs.get(did, {})
+            try:
+                _run_pipeline(
+                    daily_new_drama_id=did,
+                    target_lang=target_lang,
+                    image_model=cfg.get("image_model", DEFAULT_IMAGE_MODEL),
+                    image_prompt=cfg.get("image_prompt"),
+                    translate_system_prompt=cfg.get("translate_system_prompt"),
+                    translate_user_prompt=cfg.get("translate_user_prompt"),
+                    batch_id=batch_id,
+                    force_retry=True,  # 跳过 done 短路
+                    force_reprocess_episodes=req.retry_episodes,
+                    retry_posters=req.retry_posters,
+                )
+            except Exception as e:
+                import sys
+                print(f"[batch {batch_id}] retry drama {did} FAILED: {e}", file=sys.stderr, flush=True)
+
+        with ThreadPoolExecutor(max_workers=DRAMA_PIPELINE_CONCURRENCY) as ex:
+            list(ex.map(_run_one, drama_ids))
+
+    threading.Thread(target=_bg_run, daemon=True).start()
+    return JSONResponse({
+        "batch_id": batch_id,
+        "retried_count": len(drama_ids),
+        "drama_ids": drama_ids,
+        "status": "started",
+        "retry_posters": req.retry_posters,
+        "retry_episodes": req.retry_episodes,
+    })
 
 
 @router.get("/api/daily-new/batches/{batch_id}/export")
