@@ -30,6 +30,31 @@ router = APIRouter()
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+def _auto_retry_batch(batch_id: str, run_one_fn):
+    """批次第一轮跑完后，自动重试 failed jobs 1 轮（瞬时错误恢复）。
+
+    排除持久错误（内容审核拒绝 safety system），其余 failed drama 再跑 1 轮。
+    只重试 1 轮，不递归。
+    """
+    db = get_session()
+    try:
+        failed = db.query(TranslationJob).filter_by(
+            batch_id=batch_id, status="failed"
+        ).all()
+        retryable = [j for j in failed
+                     if "safety system" not in (j.error_message or "")]
+        retry_drama_ids = [j.daily_new_drama_id for j in retryable]
+    finally:
+        db.close()
+
+    if retry_drama_ids:
+        import sys
+        print(f"[batch {batch_id}] Auto-retrying {len(retry_drama_ids)} failed dramas (round 2)...",
+              file=sys.stderr, flush=True)
+        with ThreadPoolExecutor(max_workers=DRAMA_PIPELINE_CONCURRENCY) as ex:
+            list(ex.map(run_one_fn, retry_drama_ids))
+
+
 def _serialize_drama(d: DailyNewDrama, uploaded_eps: int = 0,
                      missing_ep_nos: list | None = None) -> dict:
     return {
@@ -337,6 +362,8 @@ async def api_daily_new_run(req: RunPipelineRequest):
         with ThreadPoolExecutor(max_workers=DRAMA_PIPELINE_CONCURRENCY) as ex:
             list(ex.map(_run_one, req.drama_ids))
 
+        _auto_retry_batch(req.batch_id, _run_one)
+
     t = threading.Thread(target=_bg_run, daemon=True)
     t.start()
 
@@ -571,6 +598,8 @@ async def api_cart_checkout(req: CartCheckoutRequest):
         with ThreadPoolExecutor(max_workers=DRAMA_PIPELINE_CONCURRENCY) as ex:
             list(ex.map(_run_one, drama_ids))
 
+        _auto_retry_batch(batch_id, _run_one)
+
     threading.Thread(target=_bg_run, daemon=True).start()
     return JSONResponse({
         "batch_id": batch_id,
@@ -617,14 +646,14 @@ async def api_batches_list():
                 eps_by_drama.setdefault(ea.daily_new_drama_id, []).append(ea)
 
             ep_uploaded = sum(1 for ea in all_eps if ea.status == "uploaded")
-            ep_total = sum((d.episode_cnt or 0) for d in dramas)
+            ep_total = len(all_eps)
 
             def _drama_missing(d):
                 eps = eps_by_drama.get(d.id, [])
+                all_nos = {ea.episode_no for ea in eps if ea.episode_no}
                 uploaded_nos = {ea.episode_no for ea in eps if ea.status == "uploaded" and ea.episode_no}
                 up_count = len(uploaded_nos)
-                expected = d.episode_cnt or 0
-                missing = sorted(set(range(1, expected + 1)) - uploaded_nos) if expected else []
+                missing = sorted(all_nos - uploaded_nos)
                 return _serialize_drama(d, uploaded_eps=up_count, missing_ep_nos=missing)
 
             batches.append({
@@ -656,11 +685,13 @@ async def api_batch_detail(batch_id: str):
         for j in jobs:
             drama = db.query(DailyNewDrama).filter_by(id=j.daily_new_drama_id).first()
             eps = db.query(EpisodeAsset).filter_by(daily_new_drama_id=j.daily_new_drama_id).all()
+            # 漏集计算基于实际 EpisodeAsset 的 ep_no，与 uploaded 同源
+            all_nos = {e.episode_no for e in eps if e.episode_no}
             uploaded_nos = {e.episode_no for e in eps if e.status == "uploaded" and e.episode_no}
             uploaded = len(uploaded_nos)
-            expected = (drama.episode_cnt or 0) if drama else 0
-            missing = sorted(set(range(1, expected + 1)) - uploaded_nos) if expected else []
-            job_data.append(_serialize_job(j, drama, uploaded, expected, missing))
+            total = len(all_nos)
+            missing = sorted(all_nos - uploaded_nos)
+            job_data.append(_serialize_job(j, drama, uploaded, total, missing))
         return JSONResponse({
             "batch_id": batch_id,
             "jobs": job_data,
@@ -749,6 +780,8 @@ async def api_batch_retry(batch_id: str, req: BatchRetryRequest):
 
         with ThreadPoolExecutor(max_workers=DRAMA_PIPELINE_CONCURRENCY) as ex:
             list(ex.map(_run_one, drama_ids))
+
+        _auto_retry_batch(batch_id, _run_one)
 
     threading.Thread(target=_bg_run, daemon=True).start()
     return JSONResponse({

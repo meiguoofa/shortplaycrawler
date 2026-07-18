@@ -57,7 +57,7 @@ def generate_poster(
     # Retry up to 3 times on transient errors (上游 400/5xx 偶发)
     last_err = None
     data = None
-    for attempt in range(1, 4):
+    for attempt in range(1, 6):
         req = urllib.request.Request(
             DOUBAO_BASE_URL + "/images/generations",
             data=json.dumps(body).encode(),
@@ -74,13 +74,13 @@ def generate_poster(
         except urllib.error.HTTPError as e:
             err_body = e.read().decode("utf-8", errors="replace")[:500]
             last_err = RuntimeError(f"HTTP {e.code} {e.reason}: {err_body}")
-            print(f"  [doubao retry {attempt}/3] HTTP {e.code}: {err_body[:200]}")
+            print(f"  [doubao retry {attempt}/5] HTTP {e.code}: {err_body[:200]}")
             if attempt < 3:
                 import time
                 time.sleep(2 ** attempt)
         except Exception as e:
             last_err = e
-            print(f"  [doubao retry {attempt}/3] {type(e).__name__}: {e}")
+            print(f"  [doubao retry {attempt}/5] {type(e).__name__}: {e}")
             if attempt < 3:
                 import time
                 time.sleep(2 ** attempt)
@@ -137,7 +137,7 @@ def generate_poster_mobinova(
         body_parts.append(f"\r\n--{boundary}--\r\n".encode())
         body = b"".join(body_parts)
 
-        for attempt in range(1, 4):
+        for attempt in range(1, 6):
             req = urllib.request.Request(
                 MOBINOVA_BASE_URL + "/images/edits",
                 data=body,
@@ -157,13 +157,13 @@ def generate_poster_mobinova(
             except urllib.error.HTTPError as e:
                 err_body = e.read().decode("utf-8", errors="replace")[:500]
                 last_err = RuntimeError(f"HTTP {e.code} {e.reason}: {err_body}")
-                print(f"  [mobinova edits retry {attempt}/3] HTTP {e.code}: {err_body[:200]}")
+                print(f"  [mobinova edits retry {attempt}/5] HTTP {e.code}: {err_body[:200]}")
                 if attempt < 3:
                     import time
                     time.sleep(2 ** attempt)
             except Exception as e:
                 last_err = e
-                print(f"  [mobinova edits retry {attempt}/3] {type(e).__name__}: {e}")
+                print(f"  [mobinova edits retry {attempt}/5] {type(e).__name__}: {e}")
                 if attempt < 3:
                     import time
                     time.sleep(2 ** attempt)
@@ -178,7 +178,7 @@ def generate_poster_mobinova(
             "size": size,
             "quality": "medium",
         }).encode()
-        for attempt in range(1, 4):
+        for attempt in range(1, 6):
             req = urllib.request.Request(
                 MOBINOVA_BASE_URL + "/images/generations",
                 data=body,
@@ -198,13 +198,13 @@ def generate_poster_mobinova(
             except urllib.error.HTTPError as e:
                 err_body = e.read().decode("utf-8", errors="replace")[:500]
                 last_err = RuntimeError(f"HTTP {e.code} {e.reason}: {err_body}")
-                print(f"  [mobinova gen retry {attempt}/3] HTTP {e.code}: {err_body[:200]}")
+                print(f"  [mobinova gen retry {attempt}/5] HTTP {e.code}: {err_body[:200]}")
                 if attempt < 3:
                     import time
                     time.sleep(2 ** attempt)
             except Exception as e:
                 last_err = e
-                print(f"  [mobinova gen retry {attempt}/3] {type(e).__name__}: {e}")
+                print(f"  [mobinova gen retry {attempt}/5] {type(e).__name__}: {e}")
                 if attempt < 3:
                     import time
                     time.sleep(2 ** attempt)

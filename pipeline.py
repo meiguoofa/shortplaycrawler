@@ -1,3 +1,4 @@
+import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -9,6 +10,8 @@ from config import (
     DEFAULT_TRANSLATE_SYSTEM_PROMPT,
     DEFAULT_TRANSLATE_USER_PROMPT,
     DOUBAO_DEFAULT_IMAGE_MODEL,
+    EPISODE_RETRY_BASE_WAIT,
+    EPISODE_RETRY_MAX_ROUNDS,
     EPISODES_URL,
     EPISODE_UPLOAD_CONCURRENCY,
     MOBINOVA_DEFAULT_TRANSLATE_MODEL,
@@ -287,10 +290,16 @@ def run_pipeline(
                 db.commit()
                 print(f"  Poster uploaded: {poster_url} ({len(poster_bytes)} bytes)")
             except Exception as e:
-                poster_failed = True
-                job.error_message = f"poster_gen: {e}"[:500]
+                # 海报重做失败时保留旧海报，不破坏原有成功状态
+                if job.poster_object_url:
+                    poster_failed = False
+                    job.error_message = f"poster_gen_retry_failed (kept old poster): {e}"[:500]
+                    print(f"  WARN: poster retry failed, keeping old poster: {e}")
+                else:
+                    poster_failed = True
+                    job.error_message = f"poster_gen: {e}"[:500]
+                    print(f"  WARN: poster gen failed, continuing to episodes: {e}")
                 db.commit()
-                print(f"  WARN: poster gen failed, continuing to episodes: {e}")
                 # 不 raise，继续 Step 3 抓剧集
 
         # ── Step 3: fetch episode list + upload ALL episodes to TOS ──
@@ -320,14 +329,15 @@ def run_pipeline(
                     tasks.append((idx, vid, ep.get("title", f"第{idx}集")))
 
                 # Concurrent upload — each thread uses its own db session
+                failed_tasks: list[tuple[int, str, str]] = []
                 with ThreadPoolExecutor(max_workers=EPISODE_UPLOAD_CONCURRENCY) as ex:
                     futures = {
-                        ex.submit(_process_episode_asset, drama.id, drama.series_id, vid, idx, title): (idx, vid)
+                        ex.submit(_process_episode_asset, drama.id, drama.series_id, vid, idx, title): (idx, vid, title)
                         for idx, vid, title in tasks
                     }
                     done_count = 0
                     for f in as_completed(futures):
-                        idx, vid = futures[f]
+                        idx, vid, title = futures[f]
                         done_count += 1
                         try:
                             ep_no, status, file_size = f.result()
@@ -338,8 +348,45 @@ def run_pipeline(
                                 print(f"    [{done_count}/{len(tasks)}] ep{ep_no} ({vid}) → {size_mb:.1f}MB uploaded")
                             else:
                                 print(f"    [{done_count}/{len(tasks)}] ep{ep_no} ({vid}) FAILED")
+                                failed_tasks.append((idx, vid, title))
                         except Exception as e:
                             print(f"    [{done_count}/{len(tasks)}] ep{idx} ({vid}) EXCEPTION: {e}")
+                            failed_tasks.append((idx, vid, title))
+
+                # Episode-level failure retry (recovers transient errors; avoids missing episodes)
+                for retry_round in range(1, EPISODE_RETRY_MAX_ROUNDS + 1):
+                    if not failed_tasks:
+                        break
+                    wait = min(EPISODE_RETRY_BASE_WAIT ** retry_round, 30)
+                    print(f"  Retrying {len(failed_tasks)} failed episodes (round {retry_round}/{EPISODE_RETRY_MAX_ROUNDS}) after {wait}s...")
+                    time.sleep(wait)
+                    retry_failed = []
+                    with ThreadPoolExecutor(max_workers=EPISODE_UPLOAD_CONCURRENCY) as ex:
+                        futures = {
+                            ex.submit(_process_episode_asset, drama.id, drama.series_id, vid, idx, title): (idx, vid, title)
+                            for idx, vid, title in failed_tasks
+                        }
+                        for f in as_completed(futures):
+                            idx, vid, title = futures[f]
+                            try:
+                                ep_no, status, file_size = f.result()
+                                if status in ("uploaded", "skipped"):
+                                    size_mb = (file_size or 0) / 1024 / 1024
+                                    print(f"    retry ep{ep_no} ({vid}) → {size_mb:.1f}MB uploaded")
+                                else:
+                                    print(f"    retry ep{ep_no} ({vid}) still FAILED")
+                                    retry_failed.append((idx, vid, title))
+                            except Exception as e:
+                                print(f"    retry ep{idx} ({vid}) EXCEPTION: {e}")
+                                retry_failed.append((idx, vid, title))
+                    failed_tasks = retry_failed
+
+                if failed_tasks:
+                    failed_nos = sorted(t[0] for t in failed_tasks)
+                    print(f"  WARNING: {len(failed_tasks)} episodes still failed after {EPISODE_RETRY_MAX_ROUNDS} rounds: ep{failed_nos}")
+                    suffix = f"episode_failures: ep{failed_nos}"
+                    job.error_message = f"{job.error_message}; {suffix}" if job.error_message else suffix
+                    db.commit()
             except Exception as e:
                 job.status = "failed"
                 job.error_message = f"episodes: {e}"[:500]

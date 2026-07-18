@@ -56,6 +56,9 @@ DOWNLOAD_CONCURRENCY = 10
 EPISODE_UPLOAD_CONCURRENCY = 5
 # Per-batch drama concurrency — how many dramas run pipeline in parallel
 DRAMA_PIPELINE_CONCURRENCY = 10
+# Episode-level failure retry on first pass (recovers transient errors; avoids missing episodes)
+EPISODE_RETRY_MAX_ROUNDS = 2   # retry rounds after initial upload round (excludes first round)
+EPISODE_RETRY_BASE_WAIT = 4    # base seconds for exponential backoff: 4s, 8s
 
 # veFaaS cloud function URL for internal TOS transfer
 # Deploy vefaas/tos_transfer.py to veFaaS, then paste the trigger URL here
