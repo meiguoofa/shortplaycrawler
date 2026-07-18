@@ -33,6 +33,10 @@
             defaultTranslateModel: '',
             defaultTranslateSystemPrompt: '',
             defaultTranslateUserPrompt: '',
+            descLangs: {},
+            descModels: [],
+            defaultDescModel: '',
+            defaultDescPrompt: '',
             loaded: false,
         }),
         actions: {
@@ -49,6 +53,10 @@
                     this.defaultTranslateModel = data.default_translate_model || '';
                     this.defaultTranslateSystemPrompt = data.default_translate_system_prompt || '';
                     this.defaultTranslateUserPrompt = data.default_translate_user_prompt || '';
+                    this.descLangs = data.desc_langs || {};
+                    this.descModels = data.desc_models || [];
+                    this.defaultDescModel = data.default_desc_model || '';
+                    this.defaultDescPrompt = data.default_desc_prompt || '';
                     this.loaded = true;
                 } catch (e) {
                     console.error('Failed to load config:', e);

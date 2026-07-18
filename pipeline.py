@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from config import (
     CRAWL_CODE,
+    DEFAULT_DESC_PROMPT,
     DEFAULT_IMAGE_GEN_PROMPT,
     DEFAULT_IMAGE_MODEL,
     DEFAULT_TRANSLATE_SYSTEM_PROMPT,
@@ -17,15 +18,20 @@ from config import (
     MOBINOVA_DEFAULT_TRANSLATE_MODEL,
     PLAY_URL,
     PLAY_URL_SLEEP,
+    SCREENSHOT_CONCURRENCY,
+    SCREENSHOT_FIRST_N_EPISODES,
+    SCREENSHOT_POSITIONS,
     TOS_IMAGE_OBJECT_PREFIX,
+    TOS_SCREENSHOT_OBJECT_PREFIX,
     TRANSLATE_LANGS,
     VIDEO_QUALITY,
 )
 from crawler.client import build_url, fetch_with_retry
 from crawler.play_url import _tos_fetch
-from models import DailyNewDrama, EpisodeAsset, TranslationJob, get_session
-from translate.doubao import translate_metadata
+from models import DailyNewDrama, DramaScreenshot, EpisodeAsset, TranslationJob, get_session
+from translate.doubao import _lang_display, describe_image, translate_metadata
 from translate.image_gen import generate_poster, generate_poster_mobinova, upload_poster_to_tos
+from translate.screenshot import extract_screenshot
 
 
 def _fetch_episodes_for_series(series_id: str) -> list[dict]:
@@ -158,6 +164,9 @@ def run_pipeline(
     force_retry: bool = False,
     force_reprocess_episodes: bool = False,
     retry_posters: bool = True,
+    desc_lang: str | None = None,
+    desc_model: str | None = None,
+    desc_prompt: str | None = None,
 ) -> TranslationJob:
     """End-to-end: translate metadata + regenerate poster + upload ALL episodes to TOS.
 
@@ -173,6 +182,9 @@ def run_pipeline(
                     Episode videos already uploaded to TOS are NEVER re-fetched (unless force_reprocess_episodes).
         force_reprocess_episodes: if True, re-fetch episode videos. DANGEROUS — only use if you want to
                                   re-upload (will skip already-uploaded ones anyway via EpisodeAsset check).
+        desc_lang: optional ISO code for image descriptions (Step 4). If None or desc_model None, skip Step 4.
+        desc_model: optional vision model name (gpt-* -> Mobinova, doubao-* -> Doubao).
+        desc_prompt: image-to-text prompt template (uses {target_lang}); defaults to DEFAULT_DESC_PROMPT.
     Returns: TranslationJob
     """
     db = get_session()
@@ -393,12 +405,129 @@ def run_pipeline(
                 db.commit()
                 raise
 
+        # ── Step 4: screenshots + descriptions (non-blocking, mirrors poster_failed pattern) ──
+        # 视频文件全程不落盘：ffprobe + ffmpeg 直接读 URL，JPEG 经 stdout -> 内存 -> TOS
+        desc_failed = False
+        if desc_lang and desc_model:
+            try:
+                final_prompt = (desc_prompt or DEFAULT_DESC_PROMPT).format(
+                    target_lang=_lang_display(desc_lang)
+                )
+                job.desc_lang = desc_lang
+                job.desc_model = desc_model
+                job.desc_prompt_template = desc_prompt or DEFAULT_DESC_PROMPT
+                job.desc_prompt_final = final_prompt
+                db.commit()
+
+                episodes_for_shots = db.query(EpisodeAsset).filter_by(
+                    daily_new_drama_id=drama.id, status="uploaded"
+                ).order_by(EpisodeAsset.episode_no).limit(SCREENSHOT_FIRST_N_EPISODES).all()
+
+                if episodes_for_shots:
+                    job_id = job.id
+                    drama_id = drama.id
+                    series_id = drama.series_id
+
+                    def _process_one_shot(ep_no, ep_url, pos_idx, ratio):
+                        # 每个任务用独立 session（线程安全）
+                        db_inner = get_session()
+                        try:
+                            existing = db_inner.query(DramaScreenshot).filter_by(
+                                translation_job_id=job_id,
+                                episode_no=ep_no,
+                                position_index=pos_idx,
+                            ).first()
+                            if existing and existing.status == "described":
+                                return  # 跳过已完成
+                            object_key = (
+                                f"{TOS_SCREENSHOT_OBJECT_PREFIX}/{series_id}_{desc_lang}/"
+                                f"ep{ep_no:02d}_pos{pos_idx}.jpg"
+                            )
+                            img_bytes, tos_url = extract_screenshot(ep_url, ratio, object_key)
+                            desc = describe_image(img_bytes, final_prompt, desc_model, desc_lang)
+                            if existing:
+                                existing.object_key = object_key
+                                existing.object_url = tos_url
+                                existing.position_ratio = ratio
+                                existing.description = desc
+                                existing.status = "described"
+                                existing.error_message = None
+                            else:
+                                db_inner.add(DramaScreenshot(
+                                    translation_job_id=job_id,
+                                    daily_new_drama_id=drama_id,
+                                    episode_no=ep_no,
+                                    position_index=pos_idx,
+                                    position_ratio=ratio,
+                                    object_key=object_key,
+                                    object_url=tos_url,
+                                    description=desc,
+                                    status="described",
+                                ))
+                            db_inner.commit()
+                        except Exception as e:
+                            db_inner.rollback()
+                            # 记录失败行（如果 existing 则更新；否则新建 failed 行）
+                            try:
+                                existing = db_inner.query(DramaScreenshot).filter_by(
+                                    translation_job_id=job_id,
+                                    episode_no=ep_no,
+                                    position_index=pos_idx,
+                                ).first()
+                                if existing:
+                                    existing.status = "failed"
+                                    existing.error_message = str(e)[:500]
+                                else:
+                                    db_inner.add(DramaScreenshot(
+                                        translation_job_id=job_id,
+                                        daily_new_drama_id=drama_id,
+                                        episode_no=ep_no,
+                                        position_index=pos_idx,
+                                        position_ratio=ratio,
+                                        status="failed",
+                                        error_message=str(e)[:500],
+                                    ))
+                                db_inner.commit()
+                            except Exception:
+                                pass
+                            print(f"    screenshot ep{ep_no} pos{pos_idx} FAILED: {e}")
+                            raise
+                        finally:
+                            db_inner.close()
+
+                    shot_tasks = [
+                        (ep.episode_no, ep.object_url, idx, ratio)
+                        for ep in episodes_for_shots
+                        for idx, ratio in enumerate(SCREENSHOT_POSITIONS)
+                    ]
+                    shot_failed_count = 0
+                    with ThreadPoolExecutor(max_workers=SCREENSHOT_CONCURRENCY) as ex:
+                        futures = {ex.submit(_process_one_shot, *args): args for args in shot_tasks}
+                        for f in as_completed(futures):
+                            args = futures[f]
+                            try:
+                                f.result()
+                                print(f"    screenshot ep{args[0]} pos{args[2]} described")
+                            except Exception:
+                                shot_failed_count += 1
+                    if shot_failed_count:
+                        desc_failed = True
+                        suffix = f"screenshots: {shot_failed_count}/{len(shot_tasks)} failed"
+                        job.error_message = f"{job.error_message}; {suffix}" if job.error_message else suffix
+                        db.commit()
+            except Exception as e:
+                desc_failed = True
+                suffix = f"screenshots: {e}"[:500]
+                job.error_message = f"{job.error_message}; {suffix}" if job.error_message else suffix
+                db.commit()
+                print(f"  WARN: Step 4 (screenshots) failed: {e}")
+
         # ── Done ──
-        # 海报失败时 status=failed（但剧集已上传，可单独重试海报）
-        job.status = "failed" if poster_failed else "done"
+        # 海报/截图失败时 status=failed（但剧集已上传，可单独重试）
+        job.status = "failed" if (poster_failed or desc_failed) else "done"
         job.updated_at = datetime.now(timezone.utc)
         db.commit()
-        print(f"=== Pipeline done: job_id={job.id} (poster_failed={poster_failed}) ===")
+        print(f"=== Pipeline done: job_id={job.id} (poster_failed={poster_failed}, desc_failed={desc_failed}) ===")
         return job
 
     finally:

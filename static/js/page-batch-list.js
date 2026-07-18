@@ -58,6 +58,10 @@
                 window.open('/api/daily-new/batches/' + batchId + '/export?format=' + format, '_blank');
             }
 
+            function exportScreenshots(batchId) {
+                window.open('/api/daily-new/batches/' + batchId + '/export-screenshots', '_blank');
+            }
+
             function copyBatchId(batchId) {
                 copyText(batchId).then(() => notify.success('已复制批次 ID'));
             }
@@ -99,7 +103,7 @@
                 });
             }
 
-            return { loading, error, batches, stats, openBatch, exportBatch, copyBatchId, batchStatus, load, formatMissing, retrying, retryBatch };
+            return { loading, error, batches, stats, openBatch, exportBatch, exportScreenshots, copyBatchId, batchStatus, load, formatMissing, retrying, retryBatch };
         },
         template: `
             <page-shell title="批次列表">
@@ -166,6 +170,8 @@
                                           @click="exportBatch(b.batch_id, 'csv')">CSV</n-button>
                                 <n-button size="small" type="info" :disabled="b.pending_count > 0"
                                           @click="exportBatch(b.batch_id, 'xlsx')">Excel</n-button>
+                                <n-button size="small" type="error" :disabled="b.pending_count > 0"
+                                          @click="exportScreenshots(b.batch_id)">截图Excel</n-button>
                                 <n-button size="small" type="warning" :loading="retrying"
                                           :disabled="b.pending_count > 0 || (b.failed_count === 0 && !b.dramas.some(d => d.missing_ep_nos && d.missing_ep_nos.length))"
                                           @click="retryBatch(b.batch_id)">重试失败</n-button>

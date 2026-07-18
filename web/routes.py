@@ -8,10 +8,14 @@ from pydantic import BaseModel
 from sqlalchemy import func as sa_func
 
 from config import (
+    DEFAULT_DESC_MODEL,
+    DEFAULT_DESC_PROMPT,
     DEFAULT_IMAGE_GEN_PROMPT,
     DEFAULT_IMAGE_MODEL,
     DEFAULT_TRANSLATE_SYSTEM_PROMPT,
     DEFAULT_TRANSLATE_USER_PROMPT,
+    DESC_LANGS,
+    DESC_MODELS,
     DOUBAO_DEFAULT_IMAGE_MODEL,
     DOUBAO_IMAGE_MODELS,
     DOUBAO_TRANSLATE_MODELS,
@@ -129,6 +133,10 @@ async def api_config_defaults():
         "default_translate_model": MOBINOVA_DEFAULT_TRANSLATE_MODEL,
         "default_translate_system_prompt": DEFAULT_TRANSLATE_SYSTEM_PROMPT,
         "default_translate_user_prompt": DEFAULT_TRANSLATE_USER_PROMPT,
+        "desc_langs": DESC_LANGS,
+        "desc_models": DESC_MODELS,
+        "default_desc_model": DEFAULT_DESC_MODEL,
+        "default_desc_prompt": DEFAULT_DESC_PROMPT,
     })
 
 
@@ -291,6 +299,9 @@ class RunPipelineRequest(BaseModel):
     force_retry: bool = False
     force_reprocess_episodes: bool = False
     retry_posters: bool = True
+    desc_lang: str | None = None
+    desc_model: str | None = None
+    desc_prompt: str | None = None
 
 
 @router.post("/api/daily-new/run")
@@ -323,6 +334,12 @@ async def api_daily_new_run(req: RunPipelineRequest):
                 if req.translate_user_prompt is not None:
                     existing.translate_user_prompt = req.translate_user_prompt
                 existing.image_model = req.image_model
+                if req.desc_lang is not None:
+                    existing.desc_lang = req.desc_lang
+                if req.desc_model is not None:
+                    existing.desc_model = req.desc_model
+                if req.desc_prompt is not None:
+                    existing.desc_prompt_template = req.desc_prompt
             else:
                 job = TranslationJob(
                     daily_new_drama_id=drama.id,
@@ -333,6 +350,9 @@ async def api_daily_new_run(req: RunPipelineRequest):
                     translate_user_prompt=req.translate_user_prompt or DEFAULT_TRANSLATE_USER_PROMPT,
                     status="pending",
                     batch_id=req.batch_id,
+                    desc_lang=req.desc_lang,
+                    desc_model=req.desc_model,
+                    desc_prompt_template=req.desc_prompt,
                 )
                 db.add(job)
         db.commit()
@@ -354,6 +374,9 @@ async def api_daily_new_run(req: RunPipelineRequest):
                     force_retry=req.force_retry,
                     force_reprocess_episodes=req.force_reprocess_episodes,
                     retry_posters=req.retry_posters,
+                    desc_lang=req.desc_lang,
+                    desc_model=req.desc_model,
+                    desc_prompt=req.desc_prompt,
                 )
             except Exception as e:
                 import sys
@@ -503,6 +526,9 @@ class CartCheckoutRequest(BaseModel):
     translate_system_prompt: str | None = None
     translate_user_prompt: str | None = None
     translate_model: str = MOBINOVA_DEFAULT_TRANSLATE_MODEL
+    desc_lang: str | None = None
+    desc_model: str | None = None
+    desc_prompt: str | None = None
 
 
 @router.post("/api/pending-cart/checkout")
@@ -561,6 +587,12 @@ async def api_cart_checkout(req: CartCheckoutRequest):
                 if req.translate_user_prompt is not None:
                     existing_job.translate_user_prompt = req.translate_user_prompt
                 existing_job.image_model = req.image_model
+                if req.desc_lang is not None:
+                    existing_job.desc_lang = req.desc_lang
+                if req.desc_model is not None:
+                    existing_job.desc_model = req.desc_model
+                if req.desc_prompt is not None:
+                    existing_job.desc_prompt_template = req.desc_prompt
                 continue
             db.add(TranslationJob(
                 daily_new_drama_id=did,
@@ -571,6 +603,9 @@ async def api_cart_checkout(req: CartCheckoutRequest):
                 translate_user_prompt=req.translate_user_prompt or DEFAULT_TRANSLATE_USER_PROMPT,
                 status="pending",
                 batch_id=batch_id,
+                desc_lang=req.desc_lang,
+                desc_model=req.desc_model,
+                desc_prompt_template=req.desc_prompt,
             ))
 
         db.query(CartItem).delete()
@@ -590,6 +625,9 @@ async def api_cart_checkout(req: CartCheckoutRequest):
                     translate_user_prompt=req.translate_user_prompt,
                     translate_model=req.translate_model,
                     batch_id=batch_id,
+                    desc_lang=req.desc_lang,
+                    desc_model=req.desc_model,
+                    desc_prompt=req.desc_prompt,
                 )
             except Exception as e:
                 import sys
@@ -750,6 +788,9 @@ async def api_batch_retry(batch_id: str, req: BatchRetryRequest):
                 "image_prompt": j.image_prompt_template,
                 "translate_system_prompt": j.translate_system_prompt,
                 "translate_user_prompt": j.translate_user_prompt,
+                "desc_lang": j.desc_lang,
+                "desc_model": j.desc_model,
+                "desc_prompt": j.desc_prompt_template,
             }
             j.status = "pending"
             j.error_message = None
@@ -773,6 +814,9 @@ async def api_batch_retry(batch_id: str, req: BatchRetryRequest):
                     force_retry=True,  # 跳过 done 短路
                     force_reprocess_episodes=req.retry_episodes,
                     retry_posters=req.retry_posters,
+                    desc_lang=cfg.get("desc_lang"),
+                    desc_model=cfg.get("desc_model"),
+                    desc_prompt=cfg.get("desc_prompt"),
                 )
             except Exception as e:
                 import sys
@@ -800,6 +844,17 @@ async def api_batch_export(batch_id: str, format: str = "csv"):
     from exporter import export_batch
     try:
         path = export_batch(batch_id, format)
+        return FileResponse(path, filename=path.split("/")[-1])
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=404)
+
+
+@router.get("/api/daily-new/batches/{batch_id}/export-screenshots")
+async def api_batch_export_screenshots(batch_id: str):
+    """导出批次的截图+描述 Excel（3 列：剧名 / 截图URL(;…) / 描述(;…)）。"""
+    from exporter import export_screenshots_batch
+    try:
+        path = export_screenshots_batch(batch_id)
         return FileResponse(path, filename=path.split("/")[-1])
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=404)

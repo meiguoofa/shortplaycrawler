@@ -136,6 +136,21 @@ DEFAULT_TRANSLATE_SYSTEM_PROMPT = (
 )
 DEFAULT_TRANSLATE_USER_PROMPT = "剧名：{title}\n简介：{description}"
 
+# Image-to-text (vision) default prompt - {target_lang} substituted at run time
+DEFAULT_DESC_PROMPT = (
+    "请用{target_lang}描述这张短剧截图，包含：人物（数量、性别、外貌、服装、表情、动作）"
+    "和场景（地点、时间、氛围）。简洁一段话，不超过 80 字。"
+)
+DESC_LANGS = TRANSLATE_LANGS  # 复用现有 5 种语言
+DESC_MODELS = ["gpt-5.4", "gpt-5.4-mini", "doubao-seed-2-0-pro-260215"]
+DEFAULT_DESC_MODEL = "gpt-5.4"
+
+# Screenshot extraction (前 3 集 × 2 张 = 6 张/剧)
+TOS_SCREENSHOT_OBJECT_PREFIX = "screenshots"
+SCREENSHOT_FIRST_N_EPISODES = 3
+SCREENSHOT_POSITIONS = [1/3, 2/3]   # 每集 2 张，片长 1/3 和 2/3 处
+SCREENSHOT_CONCURRENCY = 3          # 单剧内部并发上限
+
 # TOS object key prefix for generated posters
 TOS_IMAGE_OBJECT_PREFIX = "posters"
 

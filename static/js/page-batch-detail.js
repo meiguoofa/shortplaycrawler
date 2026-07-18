@@ -112,7 +112,12 @@
                 });
             }
 
-            return { loading, error, batch, activeNames, breadcrumbs, load, formatMissing, retrying, retryingJobId, retryAllFailed, retryJob };
+            function exportScreenshots() {
+                if (!batch.value || !batch.value.batch_id) return;
+                window.open('/api/daily-new/batches/' + batch.value.batch_id + '/export-screenshots', '_blank');
+            }
+
+            return { loading, error, batch, activeNames, breadcrumbs, load, formatMissing, retrying, retryingJobId, retryAllFailed, retryJob, exportScreenshots };
         },
         template: `
             <page-shell v-if="batch" :title="batch.batch_id.slice(0, 16) + '...'" subtitle="批次详情">
@@ -149,6 +154,8 @@
                                           @click="$router.push('/api/daily-new/batches/' + batch.batch_id + '/export?format=csv')">导出 CSV</n-button>
                                 <n-button size="small" type="info" :disabled="batch.pending_count > 0"
                                           @click="$router.push('/api/daily-new/batches/' + batch.batch_id + '/export?format=xlsx')">导出 Excel</n-button>
+                                <n-button size="small" type="error" :disabled="batch.pending_count > 0"
+                                          @click="exportScreenshots">导出截图 Excel</n-button>
                             </div>
                         </div>
                     </n-card>

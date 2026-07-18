@@ -29,6 +29,9 @@
             const imagePrompt = ref('');
             const translateSystemPrompt = ref('');
             const translateUserPrompt = ref('');
+            const descLang = ref('');
+            const descModel = ref('');
+            const descPrompt = ref('');
             const selectedDramaIds = ref([]);
 
             // Backfill modal
@@ -63,6 +66,9 @@
                 if (!imagePrompt.value) imagePrompt.value = config.defaultImagePrompt;
                 if (!translateSystemPrompt.value) translateSystemPrompt.value = config.defaultTranslateSystemPrompt;
                 if (!translateUserPrompt.value) translateUserPrompt.value = config.defaultTranslateUserPrompt;
+                if (!descLang.value) descLang.value = 'en';
+                if (!descModel.value) descModel.value = config.defaultDescModel;
+                if (!descPrompt.value) descPrompt.value = config.defaultDescPrompt;
                 await load();
             });
 
@@ -75,6 +81,12 @@
                 m => ({ label: m, value: m })
             ));
             const translateModelOptions = computed(() => config.translateModels.map(
+                m => ({ label: m, value: m })
+            ));
+            const descLangOptions = computed(() => Object.entries(config.descLangs).map(
+                ([code, name]) => ({ label: `${name} (${code})`, value: code })
+            ));
+            const descModelOptions = computed(() => config.descModels.map(
                 m => ({ label: m, value: m })
             ));
             const firstSelected = computed(() => {
@@ -97,6 +109,10 @@
                     target_lang: langName.value,
                     synopsis: '<翻译后填入>',
                 })
+            );
+            const descLangName = computed(() => config.descLangs[descLang.value] || descLang.value);
+            const finalDescPrompt = computed(() =>
+                substitute(descPrompt.value, { target_lang: descLangName.value })
             );
 
             const columns = computed(() => [
@@ -160,6 +176,9 @@
                         translate_model: translateModel.value,
                         batch_id: batchId,
                         force_retry: false,
+                        desc_lang: descLang.value,
+                        desc_model: descModel.value,
+                        desc_prompt: descPrompt.value,
                     });
                     notify.success(`批次 ${batchId.slice(0, 8)} 已提交`);
                     setTimeout(() => router.push('/daily-new/batches'), 800);
@@ -202,10 +221,13 @@
                 loading, error, dramas, jobMap, targetDate, prevDate, nextDate,
                 targetLang, imageModel, translateModel, imagePrompt,
                 translateSystemPrompt, translateUserPrompt,
+                descLang, descModel, descPrompt,
                 selectedDramaIds,
                 config, langName, firstSelected,
                 langOptions, imageModelOptions, translateModelOptions,
+                descLangOptions, descModelOptions,
                 finalTranslateSystem, finalTranslateUser, finalImagePrompt,
+                finalDescPrompt, descLangName,
                 columns, rowKey,
                 submitting, submitRun,
                 backfillModal, backfillForm, backfilling, runBackfill,
@@ -271,6 +293,29 @@
                                             <n-input v-model:value="imagePrompt" type="textarea" :rows="4" />
                                             <div class="text-sm text-gray-500 dark:text-gray-400 pt-2">最终值（实时预览，{synopsis} 提交后填入实际译文）</div>
                                             <n-input :value="finalImagePrompt" type="textarea" :rows="4" readonly />
+                                        </div>
+                                    </n-tab-pane>
+                                    <n-tab-pane name="desc" tab="④ 截图描述">
+                                        <div class="space-y-3">
+                                            <div class="flex flex-wrap gap-4">
+                                                <div class="min-w-[200px]">
+                                                    <div class="text-sm text-gray-500 dark:text-gray-400 mb-1">描述语言（独立于翻译）</div>
+                                                    <n-select v-model:value="descLang" :options="descLangOptions" />
+                                                </div>
+                                                <div class="min-w-[280px] flex-1 max-w-md">
+                                                    <div class="text-sm text-gray-500 dark:text-gray-400 mb-1">视觉模型</div>
+                                                    <n-select v-model:value="descModel" :options="descModelOptions" />
+                                                </div>
+                                                <div class="flex items-end">
+                                                    <span class="text-xs text-gray-400">前 3 集各截 2 张（片长 1/3、2/3 处），共 6 张/剧</span>
+                                                </div>
+                                            </div>
+                                            <div class="space-y-2">
+                                                <div class="text-sm text-gray-500 dark:text-gray-400">模板 (可用 {target_lang})</div>
+                                                <n-input v-model:value="descPrompt" type="textarea" :rows="4" />
+                                                <div class="text-sm text-gray-500 dark:text-gray-400 pt-2">最终值（实时）</div>
+                                                <n-input :value="finalDescPrompt" type="textarea" :rows="4" readonly />
+                                            </div>
                                         </div>
                                     </n-tab-pane>
                                 </n-tabs>

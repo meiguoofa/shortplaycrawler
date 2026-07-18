@@ -104,3 +104,53 @@ def translate_metadata(
     if not desc_out:
         desc_out = translate_text(desc, target_lang)
     return title_out, desc_out, final_system, final_user
+
+
+def describe_image(
+    image_bytes: bytes,
+    prompt: str,
+    model: str,
+    target_lang: str,
+    max_attempts: int = 3,
+) -> str:
+    """调用视觉模型对图片生成描述。返回描述文本。
+
+    复用 _client(model) 路由：gpt-* -> Mobinova, doubao-* -> Doubao。
+    图片以 base64 data URL 形式放入 OpenAI vision messages.content。
+    失败重试 max_attempts 次（指数退避 2/4s）。
+    """
+    import base64
+    import time as _time
+
+    if not image_bytes:
+        return ""
+
+    b64 = base64.b64encode(image_bytes).decode("ascii")
+    data_url = f"data:image/jpeg;base64,{b64}"
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": data_url}},
+            ],
+        }
+    ]
+
+    last_err = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            resp = _client(model).chat.completions.create(
+                model=model,
+                temperature=0.4,
+                messages=messages,
+                max_tokens=300,
+            )
+            return (resp.choices[0].message.content or "").strip()
+        except Exception as e:
+            last_err = e
+            print(f"  [describe_image retry {attempt}/{max_attempts}] {type(e).__name__}: {e}")
+            if attempt < max_attempts:
+                _time.sleep(2 ** attempt)
+    raise last_err
+
