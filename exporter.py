@@ -46,8 +46,8 @@ def _job_to_row(job: TranslationJob, drama) -> list:
         db.close()
 
     url_list = "\n".join(ep.object_url for ep in episodes if ep.object_url)
-    shot_urls = ";".join(s.object_url for s in shots if s.object_url)
-    shot_descs = ";".join(s.description for s in shots if s.description)
+    shot_urls = ";\n".join(s.object_url for s in shots if s.object_url)
+    shot_descs = ";\n".join(s.description for s in shots if s.description)
     return [
         drama.title,
         drama.description or "",
@@ -165,8 +165,8 @@ def export_screenshots_batch(batch_id: str, out_path: str | None = None) -> str:
                 .order_by(DramaScreenshot.episode_no, DramaScreenshot.position_index)
                 .all()
             )
-            shot_urls = ";".join(s.object_url for s in shots if s.object_url)
-            shot_descs = ";".join(s.description for s in shots if s.description)
+            shot_urls = ";\n".join(s.object_url for s in shots if s.object_url)
+            shot_descs = ";\n".join(s.description for s in shots if s.description)
             ws.append([drama.title, shot_urls, shot_descs])
 
         from openpyxl.styles import Alignment

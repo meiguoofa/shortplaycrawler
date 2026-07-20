@@ -65,7 +65,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## 部署
 
-服务器在新加坡（45.78.235.1），用户从中国大陆访问。架构是 **nginx:5173 → uvicorn:5174**（4 worker）。
+本机服务器在新加坡（45.78.235.1），用户从中国大陆访问。架构是 **nginx:5173 → uvicorn:5174**（4 worker）。
 
 ```bash
 # 启动 uvicorn（内部端口，只监听 127.0.0.1）
